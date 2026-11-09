@@ -250,3 +250,5 @@ svg { flex-shrink: 0; }
 @media (max-width: 599px) { .done-cards { right: 12px; left: 12px; width: auto; bottom: calc(76px + env(safe-area-inset-bottom)); } }
 
 .toast.info .ic { background: var(--bg-1); color: var(--tx-2); }
+/* a choice this device can't use: dimmed, still focusable so its reason can be shown */
+.seg button[aria-disabled="true"], .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
