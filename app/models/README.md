@@ -8,7 +8,7 @@ checks their SHA-256, prepares the models and writes them here in parts of at mo
 |---|---|---|---|---|
 | `birefnet-512-v2/model_q4.onnx.*` | 194 MB | Fast | MIT | BiRefNet 512×512 ([ZhengPeng7/BiRefNet](https://github.com/ZhengPeng7/BiRefNet)), ONNX export [onnx-community/BiRefNet_512x512-ONNX](https://huggingface.co/onnx-community/BiRefNet_512x512-ONNX) @ `b0b30af` |
 | `birefnet-1024/model_q4.onnx.*` | 210 MB | High detail (optional download, needs WebGPU) | MIT | BiRefNet general 1024×1024, ONNX export [onnx-community/BiRefNet-ONNX](https://huggingface.co/onnx-community/BiRefNet-ONNX) @ `534d3c8` |
-| `birefnet-matting-1024/model_q4.onnx.*` | 208 MB | not offered yet (proposed "Hair & fur", see `../photo/BG_REMOVER.md`) | MIT | BiRefNet-matting 1024×1024, ONNX file `BiRefNet-matting-epoch_100.onnx` of the [BiRefNet v1 release](https://github.com/ZhengPeng7/BiRefNet/releases/tag/v1) |
+| `birefnet-matting-1024/model_q4.onnx.*` | 208 MB | Hair & fur (optional download, needs WebGPU) | MIT | BiRefNet-matting 1024×1024, ONNX file `BiRefNet-matting-epoch_100.onnx` of the [BiRefNet v1 release](https://github.com/ZhengPeng7/BiRefNet/releases/tag/v1) |
 | `ort/ort-wasm-simd-threaded.asyncify.wasm.*` | 29 MB | all | MIT | ONNX Runtime Web 1.31.1 ([microsoft/onnxruntime](https://github.com/microsoft/onnxruntime)) |
 
 All models are prepared the same way (wide Split/Concat rewritten for WebGPU, the deformable

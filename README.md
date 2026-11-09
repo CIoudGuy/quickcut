@@ -15,10 +15,11 @@ Nothing is uploaded. No account. Works offline once loaded.
 
 | | |
 |---|---|
-| **Photo** | Layers, groups, masks, 27 blend modes, smart layers, re-editable crop, selections, text, AI background remover |
+| **Photo** | Layers, groups, masks, 27 blend modes, smart layers, re-editable crop, selections, text, AI background remover (Fast, High detail, Hair & fur; on the GPU or the CPU) |
 | **Video** | Split, delete, speed (up to 100x, pitch kept), volume, crop and rotate; Instant (lossless) and Exact export |
 | **Color Picker** | Pick from images or the screen, zoom to the pixel, palettes, history |
 | **Projects** | Save and open `.qcut` files for Photo and Video; recent files reopen with their layers and edits |
+| **Files** | Drop any image, video or `.qcut` anywhere: it opens in the tool it belongs to |
 
 A static site: HTML, JavaScript and a few WebAssembly modules. No build step, no server code.
 
@@ -47,7 +48,9 @@ See [app/models/README.md](app/models/README.md). Everything else works without 
 ## Self-host
 
 Copy `app/` to any static host (without `_test/`), served over HTTPS. Serve the `app/models/` parts
-as static files too. After changing a site file, regenerate the service worker's file list:
+as static files too. Send `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: credentialless` with the pages so the background remover can use
+several CPU threads (without them it runs on one). After changing a site file, regenerate the service worker's file list:
 
 ```sh
 python tools/gen-sw-manifest.py
