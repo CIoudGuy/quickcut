@@ -21,6 +21,10 @@ let ort = null; // ONNX Runtime is loaded on first use (status answers without i
 let session = null, sessionKey = "", usedEp = "", man = null, warmed = false, curModel = null;
 let aborter = new AbortController(); // cancels the downloads in flight ({op: "cancel"})
 let idleTimer = 0, busy = 0;
+// files Cache Storage refused to keep (private window, full disk): kept here for this worker's life,
+// so a retry or a second run doesn't download them again; `unsaved` tells the page once
+const mem = new Map();
+let unsaved = false;
 
 // one job at a time (a warm-up and a click must not load the model twice); "cancel" jumps the queue
 let queue = Promise.resolve();
@@ -90,6 +94,8 @@ const keyOf = (f) => `${MODELS}${f.file}?sha256=${f.sha256}`;
 async function isCached(f) {
   try { return !!(await (await caches.open(CACHE)).match(keyOf(f))); } catch { return false; }
 }
+/** On this device right now: saved, or held in memory by this worker. */
+const have = async (f) => mem.has(keyOf(f)) || (await isCached(f));
 /** What this device's GPU offers (feature detection; nothing is guessed from the browser name). */
 let gpuInfo = null;
 async function gpuCaps() {
@@ -116,10 +122,10 @@ function unfit(md, gpu) {
 async function status({ model }) {
   const mf = await manifest();
   const gpu = await gpuCaps();
-  const rt = mf.files[mf.runtime], cr = await isCached(rt);
+  const rt = mf.files[mf.runtime], cr = await have(rt);
   const models = {};
   for (const [id, md] of Object.entries(mf.models)) {
-    const f = mf.files[md.file], c = await isCached(f);
+    const f = mf.files[md.file], c = await have(f);
     models[id] = { ...md, size: f.size, cached: c, bytes: (c ? 0 : f.size) + (cr ? 0 : rt.size), unfit: unfit(md, gpu) };
   }
   const id = mf.models[model] ? model : mf.default;
@@ -136,6 +142,7 @@ async function remove({ models: ids }) {
   const mf = await manifest();
   if (session) { try { await session.release(); } catch {} }
   session = null; sessionKey = ""; warmed = false; curModel = null;
+  mem.clear();
   let cache = null;
   try { cache = await caches.open(CACHE); } catch { return { freed: 0 }; }
   const all = Object.keys(mf.models), drop = new Set(ids?.length ? ids.filter((i) => mf.models[i]) : all);
@@ -167,6 +174,7 @@ async function getFile(f, onBytes, signal) {
   let cache = null;
   try { cache = await caches.open(CACHE); } catch {}
   const key = keyOf(f);
+  if (mem.has(key)) return mem.get(key);
   const hit = await cache?.match(key);
   if (hit) {
     const b = new Uint8Array(await hit.arrayBuffer());
@@ -196,13 +204,16 @@ async function getFile(f, onBytes, signal) {
   if (off !== f.size) throw new Error("The model download was damaged. Try again.");
   if ((await hex(buf)) !== f.sha256) throw new Error("The model download was damaged (checksum mismatch). Try again.");
   if (signal.aborted) throw cancelled();
+  let saved = false;
   if (cache) {
     try {
       // drop older versions of the same file, then keep this one
       for (const req of await cache.keys()) if (req.url.startsWith(MODELS + f.file + "?") && req.url !== key) await cache.delete(req);
       await cache.put(key, new Response(buf, { headers: { "content-type": "application/octet-stream", "content-length": String(f.size) } }));
-    } catch { /* storage full or private mode: works this time, downloads again next time */ }
+      saved = true;
+    } catch { /* storage full or private mode: kept in memory below, downloads again next visit */ }
   }
+  if (!saved) { mem.set(key, buf); unsaved = true; }
   return buf;
 }
 
@@ -211,10 +222,10 @@ async function init({ id, model, ep = "auto" }) {
   const mf = await manifest();
   const name = mf.models[model] ? model : mf.default;
   const key = `${name}|${ep}`;
-  if (session && sessionKey === key) return { ep: usedEp, model: name, ms: 0, cached: true };
+  if (session && sessionKey === key) return { ep: usedEp, model: name, ms: 0, cached: true, unsaved };
   const t0 = performance.now();
   const [rt, mdf] = needed(mf, name);
-  const total = (await isCached(rt) ? 0 : rt.size) + (await isCached(mdf) ? 0 : mdf.size);
+  const total = (await have(rt) ? 0 : rt.size) + (await have(mdf) ? 0 : mdf.size);
   let got = 0, last = 0;
   const onBytes = (n) => {
     got += n;
@@ -254,7 +265,7 @@ async function init({ id, model, ep = "auto" }) {
   sessionKey = key;
   curModel = mf.models[name];
   logits = null; // decided again for this model on its first run
-  return { ep: usedEp, model: name, ms: performance.now() - t0, downloadMs: tDl - t0, loadMs: performance.now() - tDl, threads: ort.env.wasm.numThreads, adapter: adapterInfo, gpuError };
+  return { ep: usedEp, model: name, ms: performance.now() - t0, downloadMs: tDl - t0, loadMs: performance.now() - tDl, threads: ort.env.wasm.numThreads, adapter: adapterInfo, gpuError, unsaved };
 }
 
 // ── inference ────────────────────────────────────────────────────────────

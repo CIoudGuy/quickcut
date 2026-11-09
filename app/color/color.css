@@ -14,7 +14,8 @@
 .cl .cl-cloud { width: min(640px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--border); }
 .cl .cl-top { display: flex; gap: 12px; align-items: flex-start; }
 .cl .cl-top svg { margin-top: 1px; color: var(--tx-2); }
-.cl .cl-txt { display: flex; flex-direction: column; gap: 4px; }
+.cl .cl-txt { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.cl .cl-hide { margin: -4px -6px 0 0; }
 .cl .cl-txt b { font-weight: 600; }
 .cl .cl-txt span { font-size: 12px; line-height: 18px; color: var(--tx-2); }
 .cl .cl-txt .mono { color: var(--tx-1); }

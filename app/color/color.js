@@ -1094,6 +1094,10 @@ export function mount(root) {
     q(".cl-oldcloud").hidden = true;
     emptyEl.classList.toggle("has-notice", !cloudBox.hidden);
     if (!cloudBox.hidden) return;
+    // only browsers that came from the old site (or still hold its sign-in) ever see the link
+    let fromOld = false;
+    try { fromOld = localStorage.getItem("quickcut.color.fromOld") === "1"; } catch {}
+    if (!fromOld && !store.loadSession()) return;
     try {
       const sun = await (await import("./cloud.js")).getSunset();
       const end = sun && !sun.closed && sun.deleteAt ? Date.parse(sun.deleteAt) : NaN;
@@ -1103,6 +1107,8 @@ export function mount(root) {
   q(".cl-oldbtn").onclick = async () => {
     try {
       const m = await import("./cloud.js");
+      // hidden notice with a sign-in still here: just show it again
+      if (m.hasSession()) { await m.mountNotice(cloudBox, oldChanged, { force: true }); refreshOldLink(); return; }
       if (await m.signIn(cloudBox, oldChanged)) { emptyEl.classList.add("has-notice"); q(".cl-oldcloud").hidden = true; }
     } catch { toast("Couldn't open the old cloud sign-in.", { bad: true }); }
   };

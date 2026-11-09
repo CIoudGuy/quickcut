@@ -1942,6 +1942,23 @@ export function mount(root) {
       Object.assign(l, { mask: c, maskBase: a, maskOn: true, maskShift: 0, maskSoft: 0 });
     });
   }
+  /** Invert a layer's mask: what was hidden shows and the other way round (undoable). New arrays and
+   *  canvases, never edited in place, so undo keeps the old ones. The edge controls stay meaningful:
+   *  growing the old mask = shrinking the new one. After the background remover, the part that now
+   *  shows uses the photo's original colours (the cleaned edge colours belong to the old cut-out). */
+  function invertMask(l) {
+    if (!l?.mask) return false;
+    return record("Invert mask", () => {
+      const W = l.mask.width, H = l.mask.height, base = new Uint8Array(l.maskBase.length);
+      for (let i = 0; i < base.length; i++) base[i] = 255 - l.maskBase[i];
+      const cur = alphaOf(l.mask);
+      for (let i = 0; i < cur.length; i++) cur[i] = 255 - cur[i];
+      const c = blank(W, H);
+      putAlpha(c, cur, W, H);
+      Object.assign(l, { mask: c, maskBase: base, maskShift: -(l.maskShift || 0) || 0, maskOn: true });
+      if (l.preBg && l.bgFixed) l.canvas = l.canvas === l.bgFixed ? l.preBg : l.bgFixed;
+    });
+  }
   /** The layer's pixels with its mask applied (a new canvas). */
   function maskedCopy(l) {
     const c = copyCanvas(l.canvas);
@@ -2032,9 +2049,8 @@ export function mount(root) {
   onIdle.bg = () => { rb.warm = null; };
   // phones and low-memory devices: no high-detail pass and no big model (they hold several big buffers at once)
   const lowMem = (navigator.deviceMemory && navigator.deviceMemory <= 4) || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  // Fast: BiRefNet 512 + full-resolution edge refinement. High detail: the same model again on
-  // overlapping tiles (no extra download). A bigger matting model was measured and left out (BG_REMOVER.md).
-  // The list and the checks below take more models (a separate download each) when one earns its place.
+  // Fast: BiRefNet 512 + full-resolution edge refinement. High detail: BiRefNet 1024, a bigger model
+  // (own download, no tiling). Hair & fur: BiRefNet matting 1024 (own download). See BG_REMOVER.md.
   const QUALITIES = [
     ["fast", "Fast", "Fast"],
     ["hq", "High detail", "High detail"],
@@ -2145,6 +2161,17 @@ export function mount(root) {
     fill();
     return box;
   }
+  /** The arrow next to Remove background: pick the default AI model, remove downloaded ones. */
+  async function openBgMenu(anchor) {
+    const el = h(`<section class="ph-pop ph-bgmenu" role="dialog" aria-label="AI model">${qualitySeg()}</section>`);
+    bindQuality(el);
+    // open at once; sizes, availability and the downloaded models fill in when the worker answers
+    if (openLayer(el, { anchor, width: 320, reopen: false }).toggledOff) return;
+    try { await bgStatus(MODEL_OF[pickQuality()]); } catch {}
+    if (!el.isConnected) return;
+    el.querySelector(".field-label").outerHTML = qualitySeg();
+    el.append(storedRows(el));
+  }
   function askDownload(go) {
     const el = h(`<section class="ph-pop ph-bgask" role="dialog" aria-label="Remove background">
       <div class="pop-head"><span class="pop-title">Remove background</span><button class="ib" type="button" data-b="close" aria-label="Close">${icon("x")}</button></div>
@@ -2161,7 +2188,8 @@ export function mount(root) {
     bindQuality(el, label);
     el.querySelector('[data-b="close"].big').before(storedRows(el));
     const L = openLayer(el, { center: true, width: 380, reopen: false });
-    const goNow = () => { L.close(); go(); };
+    // ask the browser to keep the download (not cleared when the disk gets full); some browsers ask the user
+    const goNow = () => { L.close(); try { navigator.storage?.persist?.().catch(() => {}); } catch {} go(); };
     el.addEventListener("click", (e) => { const b = e.target.closest("[data-b]"); if (!b) return; if (b.dataset.b === "go") goNow(); else L.close(); });
     el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); goNow(); } });
     requestAnimationFrame(() => goBtn.focus());
@@ -2214,6 +2242,7 @@ export function mount(root) {
         if (job.cancelled) return;
         bgProgress(ini.ep !== "webgpu" ? "Finding subject…" : "Finding subject…", null);
         const bitmap = await createImageBitmap(src);
+        if (ini?.unsaved && !rb.unsavedShown) { rb.unsavedShown = true; toast("Model not saved: storage full or private window", { info: true, ms: 5000 }); }
         // a GPU driver that resets under load can leave the run hanging: no sign of life for 90 s
         // on the GPU = give up on it (the worker is restarted) and go on with the next way
         let alive = performance.now();
@@ -2245,11 +2274,19 @@ export function mount(root) {
       r.mask.close();
       let fixed = null;
       if (r.color) { fixed = blank(r.w, r.h); fixed.getContext("2d").drawImage(r.color, 0, 0); r.color.close(); }
-      record(used.q === "fast" ? "Remove background" : `Remove background (${QUALITIES.find((x) => x[0] === used.q)?.[1].toLowerCase() || used.q})`, () => {
+      const prevTool = tool;
+      const did = record(used.q === "fast" ? "Remove background" : `Remove background (${QUALITIES.find((x) => x[0] === used.q)?.[1].toLowerCase() || used.q})`, () => {
         Object.assign(cur, { mask: mc, maskBase: r.alpha, maskOn: true, maskShift: 0, maskSoft: 0 });
         if (fixed) { cur.preBg = src; cur.bgFixed = fixed; cur.canvas = fixed; }
         else { if (cur.preBg) cur.canvas = cur.preBg; delete cur.preBg; delete cur.bgFixed; }
       });
+      // the remover switches to the mask tool below; undo goes back to the tool the user had, redo
+      // to the mask tool again (otherwise undo leaves "Refine mask" open on a layer without a mask)
+      if (did && prevTool !== "mask") {
+        const e = hist[hi - 1], u = e.undo, rd = e.redo;
+        e.undo = () => { u(); if (tool === "mask") setTool(prevTool); };
+        e.redo = () => { rd(); if (tool !== "mask") setTool("mask"); };
+      }
       const ms = performance.now() - job.t0;
       stats.bg = { ...r.ms, ep: r.ep, init: ini, wall: Math.round(ms), w: r.w, h: r.h, quality: used.q, model: used.model, fellBack: used.q !== quality || used.ep !== tries[0].ep };
       // remember this device's speed for the estimates (worker time: model + edges, per megapixel)
@@ -2813,7 +2850,7 @@ export function mount(root) {
     },
   };
   layerOps.bg = () => removeBackground();
-  const FOOT = [["bg", "Remove background", "removeBg", PI.cutout], ["new", "New layer", "newLayer", "plus"], ["group", "Group", "group", "folder"], ["dup", "Duplicate", "duplicate", "dup"], ["clip", "Clip", "clip", "clip"], ["merge", "Merge down", "merge", "merge"], ["flatten", "Flatten", "flatten", "flatten"], ["del", "Delete layer", "delete", "trash"]];
+  const FOOT = [["new", "New layer", "newLayer", "plus"], ["group", "Group", "group", "folder"], ["dup", "Duplicate", "duplicate", "dup"], ["clip", "Clip", "clip", "clip"], ["merge", "Merge down", "merge", "merge"], ["flatten", "Flatten", "flatten", "flatten"], ["del", "Delete layer", "delete", "trash"]];
   const footBtns = () => FOOT.map(([id, label, act, ic]) => `<button type="button" data-op="${id}" aria-label="${K.tip(label, act)}" title="${K.tip(label, act)}">${icon(ic)}</button>`).join("");
   lyFoot.innerHTML = footBtns();
   lyFoot.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && doc) { commitText(); layerOps[b.dataset.op](); } });
@@ -2826,7 +2863,6 @@ export function mount(root) {
     f("flatten", doc.layers.length < 2 && !doc.groups.length);
     f("del", !n || layersOf(n).length >= doc.layers.length, K.tip(g ? "Delete group" : "Delete layer", "delete"));
     f("group", !n);
-    f("bg", !l || l.kind === "text" || !!rb.job);
   }
   // ── Layers card: rows top-first, groups as folders (collapse, indent), clipping guide lines ──
   const collapsed = new Set(); // group ids shown closed (view state, not an undo step)
@@ -3294,7 +3330,7 @@ export function mount(root) {
         <span class="sep"></span>
         ${snapBtn()}
         ${!l.group && !plain(l) ? `<span class="sep"></span>${tfLabel(l)}<button class="btn-g" type="button" data-p="tfreset" title="Reset transform">Reset</button><button class="btn-g" type="button" data-p="raster" title="Rasterize">Rasterize</button>` : ""}
-        ${l.kind && l.kind !== "text" ? `<span class="sep"></span>${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button>`}` : ""}`
+        ${l.kind && l.kind !== "text" ? `<span class="sep"></span>${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}` : ""}`
         : "";
     } else if (mode === "select") {
       html = `${noMods() ? `<div class="seg ph-selmode" role="radiogroup" aria-label="Selection mode">${SEL_OPS.map(([id, label]) => `<button type="button" role="radio" data-sm="${id}" aria-checked="${selMode === id}" aria-label="${label}" title="${label}">${icon(PI[{ new: "selNew", add: "selAdd", sub: "selSub", int: "selInt" }[id]], 16)}</button>`).join("")}</div>
@@ -3313,6 +3349,7 @@ export function mount(root) {
         <div class="seg" role="radiogroup" aria-label="View">${views.map(([id, n, t]) => `<button type="button" role="radio" data-bv="${id}" aria-checked="${rb.view === id}" title="${t}">${n}</button>`).join("")}</div>
         ${rb.view === "color" ? `<label class="ph-swatch" title="View colour" style="background:${rb.viewColor}"><input type="color" data-p="viewcolor" value="${rb.viewColor}" aria-label="View colour"></label>` : ""}
         <span class="sep"></span>
+        <button class="btn-g" type="button" data-p="maskinv" ${has ? "" : "disabled"} title="${K.tip("Invert mask", "invertMask")}">Invert</button>
         <button class="btn-2" type="button" data-p="edge" aria-haspopup="dialog" ${has ? "" : "disabled"} title="Edge">Edge${icon("chev", 12)}</button>
         <button class="btn-2" type="button" data-p="backdrop" aria-haspopup="dialog" title="Background">Background${icon("chev", 12)}</button>
         ${has ? `<label class="switch" title="Mask"><input type="checkbox" data-p="maskon" ${l.maskOn ? "checked" : ""}><span class="track"></span>Mask</label>` : `<button class="btn-p" type="button" data-p="rmbg" title="Remove background (Shift B)">${icon(PI.cutout)}Remove background</button>`}`;
@@ -3387,6 +3424,7 @@ export function mount(root) {
     switch (b.dataset.p) {
       case "snap": return toggleSnap();
       case "rmbg": return removeBackground();
+      case "bgmenu": return openBgMenu(b);
       case "refine": return setTool("mask");
       case "edge": return openEdge(b);
       case "backdrop": return openBackdrop(b);
@@ -3403,6 +3441,7 @@ export function mount(root) {
       case "all": return selectAll();
       case "desel": return deselect();
       case "inv": return invertSelection();
+      case "maskinv": return invertMask(selLayer());
       case "tolayer": return copyToLayer();
       case "clear": return clearSelected();
       case "copyhex": copyText(picked || brush.color).then((ok) => toast(ok ? `Copied ${picked || brush.color}` : "Couldn't copy", { bad: !ok })); return;
@@ -4512,7 +4551,9 @@ export function mount(root) {
   info("Shift Alt drag", "Selection", "Intersect");
   kb("selectAll", "Ctrl+A", "Selection", "Select all", () => selectAll());
   kb("deselect", "Ctrl+D", "Selection", "Deselect", () => deselect());
-  kb("invert", "Ctrl+Shift+I", "Selection", "Invert", () => invertSelection());
+  // with no selection, the usual "invert" key inverts the layer's mask (people reach for it after removing a background)
+  kb("invert", "Ctrl+Shift+I", "Selection", "Invert", () => { if (!selection && selLayer()?.mask) invertMask(selLayer()); else invertSelection(); });
+  kb("invertMask", "Ctrl+I", "Selection", "Invert mask", () => { if (selLayer()?.mask) invertMask(selLayer()); });
   kb("deselectEsc", "Esc", "Selection", "Deselect", () => deselect(), () => !!selection && !crop && !rb.job, { ctx: "sel" });
   info("Shift (while dragging)", "Selection", "Square / circle");
   // Background remover
@@ -4724,6 +4765,7 @@ export function mount(root) {
   root._qc = { open: (files) => openFiles(files.map((file) => ({ file }))), openNew: (files) => openFiles(files.map((file) => ({ file })), { asLayers: false }), stats, get doc() { return doc; }, get view() { return view; }, get selection() { return selection; }, ops: layerOps, cycleBlend: (d) => cycleBlend(selNode(), d), select: (id) => { setSel(id); renderLayers(); }, get last() { return ex.blob; }, renderNow: () => { if (raf) cancelAnimationFrame(raf); raf = 0; frame(); },
     get collapsed() { return [...collapsed]; }, toggleCollapsed: (id) => { if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id); renderLayers(); saveSession(); },
     addMask: () => addMask(selLayer()),
+    get tool() { return tool; },
     // smart layers / crop / resize / session (tests)
     get crop() { return crop; }, lm: (l) => lm(l), resizeImage: (w, hh) => resizeImage(w, hh), resizeCanvas: (w, hh) => resizeCanvas(w, hh),
     rasterize: () => rasterize(selLayer()), resetTransform: () => resetTransform(selLayer()), setCrop: (o) => { Object.assign(crop, o); crop.base = { ...crop.rect }; invalidate(true); },

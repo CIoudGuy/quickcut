@@ -239,3 +239,9 @@
 .ph-stored { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 .ph-stored .row-between { gap: 8px; color: var(--tx-2); }
 .ph-stored .acts { display: inline-flex; gap: 4px; }
+/* Remove background + its AI model menu, joined into one control */
+.ph-split { display: inline-flex; align-items: stretch; }
+.ph-split > .btn-2:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ph-split > .ph-caret { width: 26px; padding: 0; justify-content: center; margin-left: 1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.ph-bgmenu { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.ph-bgmenu .ph-stored { padding-top: 10px; }
