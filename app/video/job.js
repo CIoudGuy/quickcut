@@ -18,6 +18,7 @@
 // high.
 
 import { weights, partRate, redoParts } from "./fit.js";
+import { makeProgress } from "./progress.js";
 
 const DIR = "qcv-jobs";
 const DAY = 86400e3;
@@ -141,7 +142,7 @@ export function runExact(o) {
   const note = (what) => { if (stats.events.length < 200) stats.events.push([Math.round((performance.now() - stats.started) / 100) / 10, what]); };
   const spawn = () => { const w = new Worker(o.workerUrl, { type: "module" }); live.add(w); return w; };
   const kill = (w) => { try { w.terminate(); } catch {} live.delete(w); };
-  let abort = null;
+  let abort = null, tickTimer = 0;
   // (stopped workers never answer: the promise is rejected here so nothing waits for them)
   const cancel = () => { cancelled = true; for (const w of [...live]) kill(w); abort?.(new Error("cancelled")); };
 
@@ -172,43 +173,39 @@ export function runExact(o) {
     const needAudio = o.hasAudio && J.audio === undefined;
     if (F) stats.fit = { target: s.fit.target, parts: count, rounds: [], log: [] };
 
-    // progress: audio 2 %, video 93 % (80 % with a size target), final file 5 %; never goes backwards.
-    // With a size target the last 13 % of the video share belongs to the correction rounds: round r
-    // takes half of what is left (so the bar keeps moving however many rounds it needs).
-    const prog = { inSeg: new Map(), audio: J.audio !== undefined || !o.hasAudio ? 1 : 0, mux: 0, max: 0, stage: "Encoding video", redo: null, vs: F ? 0.8 : 0.93 };
+    // progress: one time-based model for the whole job (progress.js); work counted in output seconds
+    const fpsOut = s.fps || 30;
+    const model = makeProgress(performance.now());
+    const prog = { inSeg: new Map(), audio: J.audio !== undefined || !o.hasAudio ? 1 : 0, audioT0: performance.now(), mux: 0, muxT0: 0, stage: "Encoding", redo: null, phase: "encode", dryMs: 0, partT0: new Map(), partWall: {}, firstWall: 0 };
     const doneFrames = () => Object.values(J.done).reduce((a, d) => a + d.frames, 0);
-    const samples = []; // [time, frames encoded so far] for the rate
-    let lastReport = 0;
+    let lastReport = 0, lastOut = { frac: 0, left: null, rate: 0 };
     const report = (force) => {
       const now = performance.now();
       if (!force && now - lastReport < 150) return;
       lastReport = now;
-      let f, all, vfrac;
+      let f, all;
       if (prog.redo) {
         f = prog.redo.list.reduce((a, i) => a + (J.done[i]?.frames || 0), 0);
         all = prog.redo.n;
-        for (const n of prog.inSeg.values()) f += n;
-        const r = prog.redo.r, a0 = 1 - 0.5 ** r, a1 = 1 - 0.5 ** (r + 1);
-        vfrac = prog.vs + (0.93 - prog.vs) * (a0 + (a1 - a0) * Math.min(1, f / Math.max(1, all))) 
-        vfrac = Math.min(0.93, vfrac);
-      } else {
-        f = doneFrames();
-        for (const n of prog.inSeg.values()) f += n;
-        all = plan.frames;
-        vfrac = prog.vfull ? 0.93 : prog.vs * (f / Math.max(1, all));
-      }
-      samples.push([now, f]);
-      while (samples.length > 2 && now - samples[0][0] > 6000) samples.shift();
-      const frac = Math.min(1, 0.02 * prog.audio + vfrac + 0.05 * prog.mux);
-      prog.max = Math.max(prog.max, frac);
-      // time left: frames still to encode at the recent rate, plus the final file (~ 1 GB/s)
-      const [t0, f0] = samples[0];
-      const rate = now - t0 > 1500 ? ((f - f0) * 1000) / (now - t0) : 0;
-      stats.rate = rate;
+      } else { f = doneFrames(); all = plan.frames; }
+      if (prog.phase === "encode" || prog.phase === "redo") for (const n of prog.inSeg.values()) f += n;
       const outBytes = s.fit ? s.fit.target : (s.bitrate / 8) * plan.totalOut;
-      const left = prog.mux > 0 ? null : rate > 0 ? Math.max(0, all - f) / rate + outBytes / 1e9 : null;
-      o.onProgress({ frac: prog.max, stage: prog.stage, left: prog.mux > 0 ? (prog.muxLeft ?? null) : left, fps: rate });
+      let passLeft, roundCost;
+      if (prog.redo && Object.keys(prog.partWall).length >= count) {
+        // wall time of the first pass per part, spread over the workers that ran in parallel
+        const par = Math.max(1, Object.values(prog.partWall).reduce((a, x) => a + x, 0) / 1000 / Math.max(1, prog.firstWall));
+        passLeft = 0; roundCost = 0;
+        for (const i of prog.redo.list) {
+          const w = (prog.partWall[i] || 0) / 1000 / par;
+          roundCost += w;
+          passLeft += w * (J.done[i] ? 0 : 1 - Math.min(1, (prog.inSeg.get(i) || 0) / Math.max(1, segFrames[i])));
+        }
+      }
+      lastOut = model.update({ now, phase: prog.phase, passLeft, roundCost, firstWall: prog.firstWall, done: f / fpsOut, total: all / fpsOut, round: prog.redo ? prog.redo.r : F ? F.round : 0, fit: !!F, audio: prog.audio, audioT0: prog.audioT0, muxFrac: prog.mux, muxT0: prog.muxT0, muxEst: Math.max(0.5, prog.dryMs ? (prog.dryMs / 1000) * 1.5 : outBytes / 2e8) });
+      stats.rate = lastOut.rate;
+      o.onProgress({ frac: lastOut.frac, stage: prog.stage, left: lastOut.left, fps: lastOut.rate * fpsOut });
     };
+    tickTimer = setInterval(() => report(true), 500);
 
     // 2. audio, alongside the video
     const audioDone = needAudio ? new Promise((res, rej) => {
@@ -248,6 +245,7 @@ export function runExact(o) {
         if (F) { bitrate = partRate(F, i, J.done, running()); F.req[i] = bitrate; }
         a.seg = i;
         prog.inSeg.set(i, 0);
+        prog.partT0.set(i, performance.now());
         a.w.postMessage({ op: "seg", i, frames: plan.segs[i], bitrate });
       };
       const startWorker = () => {
@@ -261,6 +259,7 @@ export function runExact(o) {
           else if (m.op === "segProg") { prog.inSeg.set(m.i, m.n); report(); }
           else if (m.op === "segDone") {
             prog.inSeg.delete(m.i);
+            if (!(m.i in prog.partWall) && !prog.redo) prog.partWall[m.i] = performance.now() - (prog.partT0.get(m.i) || performance.now());
             stats.decoded = (stats.decoded || 0) + (m.decoded || 0); // source frames decoded (fast pieces skip most)
             J.done[m.i] = { frames: m.n, bytes: m.bytes, desc: m.desc ? [...m.desc] : null, codec: m.codec, color: m.color || null };
             if (F && stats.fit.log.length < 4000) stats.fit.log.push([m.i, m.bitrate, Math.round((m.bytes * 8) / F.d[m.i])]);
@@ -322,6 +321,8 @@ export function runExact(o) {
     for (let i = 0; i < count; i++) if (!J.done[i]) first.push(i);
     await Promise.all([encodeParts(first), audioDone]);
     if (cancelled) throw new Error("cancelled");
+    prog.firstWall = (performance.now() - stats.started) / 1000;
+    model.endPass(performance.now(), doneFrames() / fpsOut);
     stats.encodeSecs = (performance.now() - stats.started) / 1000;
 
     // 4. the final file
@@ -341,8 +342,7 @@ export function runExact(o) {
         else if (m.op === "progress") {
           if (dry) return;
           prog.mux = m.done / Math.max(1, m.total);
-          const el = (performance.now() - t0) / 1000;
-          prog.muxLeft = prog.mux > 0.05 ? (el * (1 - prog.mux)) / prog.mux : null;
+          prog.muxT0 = t0;
           report();
         } else if (m.op === "done") { kill(w); res(m); }
         else if (m.op === "error") { kill(w); rej(new Error(m.why)); }
@@ -353,16 +353,22 @@ export function runExact(o) {
     if (F) {
       // the exact size first (a muxer run that writes nothing); shrink the biggest parts until
       // the file fits
-      prog.stage = "Checking the size";
+      prog.stage = "Checking size"; prog.phase = "check";
       report(true);
+      let prevBytes = null;
       for (;;) {
         const t0 = performance.now();
         const { bytes } = await mux(true);
+        prog.dryMs = performance.now() - t0; model.setDry(prog.dryMs);
         if (cancelled) throw new Error("cancelled");
         const payload = Object.values(J.done).reduce((a, d) => a + d.bytes, 0) + (J.audio?.bytes || 0);
         stats.fit.rounds.push({ bytes, overhead: bytes - payload, ms: Math.round(performance.now() - t0) });
         F.sizes.push(bytes);
-        if (bytes <= s.fit.target) { prog.vfull = true; break; }
+        if (bytes <= s.fit.target) break;
+        // the last round hardly moved the size: the encoder is at its floor for this picture, more
+        // rounds only burn minutes (4 rounds of a 5K AV1 export ended 5 MB over)
+        if (prevBytes != null && prevBytes - bytes < 0.2 * (prevBytes - s.fit.target * 0.985)) throw new Error(`The encoder can't get below ${fmtMB(bytes)} here. Choose a larger size.`);
+        prevBytes = bytes;
         if (F.round >= 4) throw new Error(`The result is still ${fmtMB(bytes)}, over ${fmtMB(s.fit.target)}. Try a larger size.`);
         const redo = redoParts(F, J.done, bytes - s.fit.target * 0.985, F.round);
         F.round++;
@@ -371,29 +377,33 @@ export function runExact(o) {
         let again = 0;
         for (const i of list) { F.fixed[i] = redo[i]; again += J.done[i].frames; delete J.done[i]; }
         await o.save(J);
-        prog.stage = "Fitting to size";
+        prog.stage = "Fitting to size"; prog.phase = "redo";
         prog.redo = { r: F.round - 1, n: again, list };
-        samples.length = 0;
+        model.newPass(performance.now(), true);
         if (cancelled) throw new Error("cancelled");
         report(true);
         await encodeParts(list);
         if (cancelled) throw new Error("cancelled");
         for (const i of list) delete F.fixed[i];
+        model.endPass(performance.now(), list.reduce((a, i) => a + (J.done[i]?.frames || 0), 0) / fpsOut);
         prog.redo = null;
-        prog.stage = "Checking the size";
+        prog.stage = "Checking size"; prog.phase = "check";
       }
     }
-    prog.stage = "Finishing";
+    prog.stage = "Finishing"; prog.phase = "final"; prog.muxT0 = performance.now();
+    report(true);
     const res = await mux(false);
     if (cancelled) throw new Error("cancelled");
     // (can't happen: the same parts as measured; never hand over a file over the limit)
     if (s.fit && res.bytes > s.fit.target) throw new Error("The result came out over the size limit.");
-    prog.mux = 1; report(true);
+    clearInterval(tickTimer);
+    const fin = model.done();
+    o.onProgress({ frac: 1, stage: prog.stage, left: 0, fps: fin.rate * fpsOut });
     stats.totalSecs = (performance.now() - stats.started) / 1000;
     return { ...res, stats };
   })();
   const promise = new Promise((res, rej) => { abort = rej; main.then(res, rej); });
-  promise.catch(() => {}).finally(() => { for (const w of [...live]) kill(w); });
+  promise.catch(() => {}).finally(() => { clearInterval(tickTimer); for (const w of [...live]) kill(w); });
   return { promise, cancel };
 }
 const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${(b / 1e6).toFixed(1)} MB`);

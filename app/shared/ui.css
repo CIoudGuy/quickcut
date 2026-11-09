@@ -227,6 +227,18 @@ svg { flex-shrink: 0; }
 .movable.moved { left: var(--mx) !important; top: var(--my) !important; right: auto !important; bottom: auto !important; transform: none !important; margin: 0 !important; }
 @media (max-width: 599px) { .movable > .grip { display: none; } }
 
+/* grouped floating bars (groupBar in ui.js): related controls in a .grp, a thin line between groups,
+   whole groups wrap (a group starting a row drops its line); .end (the main action) sits at the right */
+.gbar { display: flex; flex-wrap: wrap; align-items: center; column-gap: 13px; row-gap: 6px; }
+.gbar .grp { position: relative; display: inline-flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 6px 4px; min-height: var(--ctl); max-width: 100%; }
+.gbar .grp + .grp::before { content: ""; position: absolute; left: -7px; top: 50%; width: 1px; height: 20px; margin-top: -10px; background: var(--border); }
+.gbar .grp.row-start::before { display: none; }
+.gbar .grp.end { margin-left: auto; }
+/* the grip sits at the top-left corner, beside the first row (never alone on a row) */
+.gbar.movable { padding-left: 26px; } /* floating bars are positioned */
+.gbar.movable > .grip { position: absolute; left: 6px; top: 6px; margin: 0; }
+@media (max-width: 599px) { .gbar.movable { padding-left: 8px; } }
+
 /* tooltips (from `title`): small, dark, fast */
 .tip { position: fixed; z-index: 70; max-width: 280px; display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--r-md); background: var(--bg-3); color: var(--tx-1); box-shadow: var(--shadow); font: 500 12px/16px var(--font); pointer-events: none; white-space: nowrap; opacity: 0; transform: translateY(2px); transition: opacity var(--t-quick) var(--ease), transform var(--t-quick) var(--ease); }
 .tip.in { opacity: 1; transform: none; }

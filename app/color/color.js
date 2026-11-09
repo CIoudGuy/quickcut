@@ -7,7 +7,7 @@
 import {
   h, $, esc, icon, isPhone, fmtAgo, baseName, toast, intake, pickFiles, recents, thumbOf, copyText, mod, isTyping, topLayer, syncSlider, openLayer, session, renderResume, makeMovable,
 } from "../shared/ui.js";
-import { createKeys } from "../shared/keys.js";
+import { createKeys, baseKey } from "../shared/keys.js";
 import * as store from "./store.js";
 import { screenPickKind, pickFromScreen } from "./screenpick.js";
 
@@ -77,6 +77,7 @@ export function mount(root) {
               <button class="ib sm cl-zo" type="button" data-kact="zoomOut" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button>
               <button class="cl-zp mono" type="button" data-kact="actual" title="Actual size" aria-label="Actual size">100%</button>
               <button class="ib sm cl-zi" type="button" data-kact="zoomIn" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button>
+              <span class="sep cl-zsep" aria-hidden="true"></span>
               <button class="btn-g sm cl-zf" type="button" data-kact="fit" title="Fit">Fit</button>
             </div>
           </section>
@@ -132,10 +133,11 @@ export function mount(root) {
   const UNDO_MAX = 100;
   const ustack = [];
   let uptr = 0;
+  let justOpened = false, opened = [], openedResumed = false; // see markOpened
   const undoBtn = q(".cl-undo"), redoBtn = q(".cl-redo");
   function syncUndo() {
     const u = ustack[uptr - 1], r = ustack[uptr];
-    undoBtn.disabled = !u; redoBtn.disabled = !r;
+    undoBtn.disabled = !u && !justOpened; redoBtn.disabled = !r;
     undoBtn.title = K.tip(u ? `Undo ${u.label}` : "Undo", "undo");
     undoBtn.setAttribute("aria-label", u ? `Undo ${u.label}` : "Undo");
     redoBtn.title = K.tip(r ? `Redo ${r.label}` : "Redo", "redo");
@@ -143,6 +145,7 @@ export function mount(root) {
   }
   function record(label, undoFn, redoFn, extra) {
     const e = { label, undo: undoFn, redo: redoFn, done: true, ...extra };
+    justOpened = false;
     for (const x of ustack.splice(uptr)) x.drop?.(false);
     ustack.push(e);
     while (ustack.length > UNDO_MAX) ustack.shift().drop?.(true);
@@ -151,11 +154,13 @@ export function mount(root) {
     return e;
   }
   function undo() {
+    if (justOpened) { closeOpened(); return; }
     const e = ustack[uptr - 1];
     if (!e || e.undo() === false) return;
     e.done = false; uptr--; syncUndo();
   }
   function redo() {
+    notJustOpened();
     const e = ustack[uptr];
     if (!e || e.redo() === false) return;
     e.done = true; uptr++; syncUndo();
@@ -169,13 +174,39 @@ export function mount(root) {
     const el = h(`<section role="dialog" aria-label="Undo and redo" class="cl-undomenu"><button class="btn-2 big um-u" type="button">${icon("undo")}<span></span></button><button class="btn-2 big um-r" type="button">${icon("redo")}<span></span></button></section>`);
     const u = ustack[uptr - 1], r = ustack[uptr];
     const bu = el.querySelector(".um-u"), br = el.querySelector(".um-r");
-    bu.querySelector("span").textContent = u ? `Undo ${u.label}` : "Nothing to undo"; bu.disabled = !u;
+    bu.querySelector("span").textContent = u ? `Undo ${u.label}` : justOpened ? "Undo" : "Nothing to undo"; bu.disabled = !u && !justOpened;
     br.querySelector("span").textContent = r ? `Redo ${r.label}` : "Nothing to redo"; br.disabled = !r;
     const layer = openLayer(el, { anchor: ev.currentTarget, width: 300 });
     bu.onclick = () => { layer.close(); undo(); };
     br.onclick = () => { layer.close(); redo(); };
   };
   addEventListener("pagehide", () => { for (let i = 0; i < uptr; i++) ustack[i].leave?.(); });
+  // Opened the wrong image: the first Undo right after opening from the start screen (nothing done
+  // yet) closes it again and shows the start screen. Anything else (a step, a click, a key, the
+  // wheel) ends that chance; adding from the start screen is no undo step, so undoing later never
+  // goes back to the start screen by accident.
+  function notJustOpened() { if (!justOpened) return; justOpened = false; opened = []; syncUndo(); }
+  function markOpened(list, resumed) {
+    for (const x of ustack.splice(uptr)) x.drop?.(false); // a redo must not bring back what was there before
+    justOpened = true; opened = list; openedResumed = resumed;
+    syncUndo();
+  }
+  function closeOpened() {
+    const list = opened.filter((d) => docs.includes(d));
+    justOpened = false; opened = [];
+    if (!list.length) { syncUndo(); return; }
+    if (openedResumed) { // a Continue keeps its session
+      for (const d of list) docs.splice(docs.indexOf(d), 1);
+      cur = null;
+      if (docs.length) select(docs[0]); else showEmpty();
+    } else detach(list);
+    list.forEach(disposeDoc);
+    syncUndo();
+  }
+  const UNDO_SEL = '[data-kact="undo"], .cl-more-a, .cl-undomenu .um-u';
+  document.addEventListener("keydown", (e) => { if (justOpened && baseKey(e) && K.match(e)?.a.id !== "undo") notJustOpened(); }, true);
+  document.addEventListener("pointerdown", (e) => { if (justOpened && !e.target.closest?.(UNDO_SEL)) notJustOpened(); }, true);
+  document.addEventListener("wheel", notJustOpened, { capture: true, passive: true });
   /** a step for the colour list of one image */
   function recordColors(doc, label, before) {
     const after = { colors: [...doc.colors], sel: doc.sel };
@@ -215,6 +246,7 @@ export function mount(root) {
   async function addFiles(items) {
     items = items.filter((it) => isImage(it.file));
     if (!items.length) { toast("That isn't an image I can open.", { bad: true }); return; }
+    const fromStart = !cur && !docs.length;
     let first = null, bad = 0;
     const added = [];
     for (const { file, handle } of items) {
@@ -238,7 +270,7 @@ export function mount(root) {
     }
     if (first && cur !== first && items.length) select(first);
     if (bad && !docs.length) showEmpty();
-    recordAdd(added);
+    if (fromStart && added.length) markOpened(added, false); else recordAdd(added);
   }
   async function addFromUrl(name, dataUrl, key, colors) {
     const file = new File([await (await fetch(dataUrl)).blob()], name, { type: (dataUrl.match(/^data:([^;,]+)/) || [])[1] || "image/png" });
@@ -1085,6 +1117,7 @@ export function mount(root) {
     restoring = false;
     if (!docs.length) { toast("Couldn't restore your images.", { bad: true }); return; }
     select(sel || docs[0], true);
+    markOpened([...docs], true);
   }
 
   // ── old cloud notice (only for people still signed in to it) ──────────────

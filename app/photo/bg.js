@@ -100,7 +100,7 @@ const have = async (f) => mem.has(keyOf(f)) || (await isCached(f));
 let gpuInfo = null;
 async function gpuCaps() {
   if (gpuInfo) return gpuInfo;
-  gpuInfo = { webgpu: false };
+  gpuInfo = { webgpu: false, api: !!self.navigator?.gpu };
   try {
     const ad = self.navigator?.gpu && (await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }));
     if (ad) {
@@ -113,6 +113,8 @@ async function gpuCaps() {
 /** Why a model can't run on this device ("" when it can). Models marked `gpu` need WebGPU with 16-bit floats. */
 function unfit(md, gpu) {
   if (!md.gpu) return "";
+  // the browser has WebGPU but no real GPU right now (after GPU crashes it falls back to software): a restart fixes it
+  if (gpu.api && (!gpu.webgpu || gpu.fallback)) return "GPU unavailable right now. Restart the browser";
   if (!gpu.webgpu || gpu.fallback) return "Needs GPU access (WebGPU), which this browser doesn't give";
   if (!gpu.f16) return "Needs a GPU with 16-bit float support";
   if (gpu.maxBuffer < 1 << 30 || gpu.maxBinding < 1 << 30) return "This GPU's memory limits are too small for it";

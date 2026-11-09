@@ -8,7 +8,8 @@ self.onmessage = async (e) => {
   else if (m.op === "audio") { await wait(50); self.postMessage({ op: "audioDone", meta: { bytes: 1000, desc: [] } }); }
   else if (m.op === "seg") {
     const n = m.frames.length / 2;
-    for (let k = 1; k <= 4; k++) { await wait(60); self.postMessage({ op: "segProg", i: m.i, n: Math.round((n * k) / 4) }); }
+    // uneven: some parts (long runs of 100x pieces) take several times longer than others
+    for (let k = 1; k <= 4; k++) { await wait(150 + (m.i % 3) * 220); self.postMessage({ op: "segProg", i: m.i, n: Math.round((n * k) / 4) }); }
     self.postMessage({ op: "segDone", i: m.i, n, bytes: 100000, bitrate: m.bitrate, desc: null, codec: "avc1", decoded: n });
   } else if (m.op === "mux") {
     const total = m.segs.reduce((a, s) => a + s.n, 0);

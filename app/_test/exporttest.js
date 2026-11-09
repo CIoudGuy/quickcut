@@ -34,10 +34,45 @@ export async function run() {
     const fit = log.filter((p) => p.stage === "Fitting to size");
     const distinct = new Set(fit.map((p) => p.frac.toFixed(3))).size;
     ok("bar moves while fitting", fit.length > 3 && distinct >= 4, { n: fit.length, distinct });
-    ok("fitting stays below 100 %", fit.every((p) => p.frac < 0.96), Math.max(...fit.map((p) => p.frac)));
+    ok("fitting stays below 100 %", fit.every((p) => p.frac < 1), Math.max(...fit.map((p) => p.frac)));
+  }
+  // 1b. the numbers over time (a sample every 0.5 s): % only up and in small steps, the time left always
+  // there once it shows, never jumping, the stage names short; 1 and 2 correction rounds
+  for (const rounds of [1, 2]) {
+    calls = 0;
+    answers = rounds === 1 ? [1.4 * TARGET, 0.9 * TARGET] : [1.5 * TARGET, 1.2 * TARGET, 0.9 * TARGET];
+    const { run, log } = make();
+    await run.promise;
+    const t0 = log[0].t, samples = [];
+    for (let k = 0; k * 500 <= log[log.length - 1].t - t0; k++) { const p = [...log].reverse().find((q) => q.t - t0 <= k * 500); if (p) samples.push(p); }
+    const tag = rounds + " round(s): ";
+    ok(tag + "% never down", samples.every((p, i) => !i || p.frac >= samples[i - 1].frac));
+    const firstLeft = samples.findIndex((p) => p.left != null);
+    const steps = samples.map((p, i) => (i ? p.frac - samples[i - 1].frac : 0));
+    ok(tag + "% no big steps", Math.max(...steps.slice(firstLeft + 2, -1)) < 0.2, Math.max(...steps.slice(firstLeft + 2, -1)).toFixed(3));
+    ok(tag + "time left appears early", firstLeft >= 0 && firstLeft <= 8, firstLeft);
+    ok(tag + "time left never goes away", samples.slice(firstLeft).every((p) => p.left != null), samples.map((p) => p.left == null ? "-" : p.left.toFixed(1)).join(" "));
+    const l = samples.slice(firstLeft).map((p) => p.left ?? 0);
+    const jumps = l.map((x, i) => (i ? Math.abs(x - (l[i - 1] - 0.5)) : 0));
+    ok(tag + "time left smooth", Math.max(...jumps) < 4, jumps.map((x) => x.toFixed(1)).join(" "));
+    ok(tag + "ends at 100 %", samples[samples.length - 1].frac === 1 || log[log.length - 1].frac === 1);
+    ok(tag + "stage names", log.every((p) => ["Encoding", "Checking size", "Fitting to size", "Finishing"].includes(p.stage)), [...new Set(log.map((p) => p.stage))]);
+    out["trace " + rounds] = samples.map((p) => `${(p.t - t0) / 1000 | 0}s ${Math.round(p.frac * 100)}% ${p.left == null ? "-" : p.left.toFixed(1)}s ${p.stage}`).filter((_, i) => i % 2 === 0);
+  }
+  // 1c. the encoder cannot get smaller (the size hardly moves between rounds): a short error after 2 rounds, not 4
+  {
+    calls = 0; let dry = 0;
+    answers = [1.5 * TARGET, 1.45 * TARGET, 1.44 * TARGET, 1.44 * TARGET, 1.44 * TARGET, 1.44 * TARGET];
+    bc.onmessage = (e) => { if (e.data.mux) { if (e.data.dry) dry++; bc.postMessage({ bytes: answers[Math.min(calls++, answers.length - 1)] }); } };
+    const { run } = make();
+    const r = await Promise.race([run.promise.then(() => "resolved", (e) => String(e.message)), wait(40000).then(() => "timeout")]);
+    ok("stuck size: short error", /can't get below/.test(r), r);
+    ok("stuck size: gives up after 2 rounds", dry <= 3, dry);
+    answers = [1.5 * TARGET, 1.2 * TARGET, 0.9 * TARGET];
+    bc.onmessage = (e) => { if (e.data.mux) { const b = e.data.dry ? answers[Math.min(calls++, answers.length - 1)] : answers[answers.length - 1]; bc.postMessage({ bytes: b }); } };
   }
   // 2. cancel at every stage: no more progress after it, no worker left running
-  const stages = ["Encoding video", "Checking the size", "Fitting to size", "Finishing"];
+  const stages = ["Encoding", "Checking size", "Fitting to size", "Finishing"];
   for (const stage of stages) {
     calls = 0;
     const { run, log } = make();
@@ -51,7 +86,7 @@ export async function run() {
     ok("cancel at " + stage + ": the job settles", r === "cancelled", r);
   }
   // 3. a job stopped in the middle of a correction round (some parts deleted) continues and finishes
-  for (const stage of ["Fitting to size", "Checking the size"]) {
+  for (const stage of ["Fitting to size", "Checking size"]) {
     calls = 0;
     const a = make();
     await until(() => a.log.some((p) => p.stage === stage), 20000);

@@ -685,6 +685,28 @@ const MOVE_KEY = "quickcut.bars";
 let barPos = {};
 try { barPos = JSON.parse(localStorage.getItem(MOVE_KEY) || "{}") || {}; } catch {}
 const saveBars = () => { try { localStorage.setItem(MOVE_KEY, JSON.stringify(barPos)); } catch {} };
+// Grouped floating bars (ui.css .gbar): related controls sit in a .grp, a thin line separates the
+// groups, and whole groups wrap. A group that starts a new row gets .row-start (its line hidden).
+export function groupBar(bar) {
+  bar.classList.add("gbar");
+  let raf = 0;
+  const mark = () => {
+    raf = 0;
+    let prev = null;
+    for (const g of bar.querySelectorAll(".grp")) {
+      if (g.parentElement.closest(".grp") || !g.getClientRects().length) continue;
+      const r = g.getBoundingClientRect();
+      // a new row, or the end group pushed away to the right: no line
+      g.classList.toggle("row-start", !prev || r.top >= prev.bottom - 2 || (g.classList.contains("end") && r.left - prev.right > 24));
+      prev = r;
+    }
+  };
+  const soon = () => { if (!raf) raf = requestAnimationFrame(mark); };
+  new ResizeObserver(soon).observe(bar);
+  new MutationObserver(soon).observe(bar, { childList: true, subtree: true });
+  addEventListener("quickcut:zoom", soon);
+  return mark;
+}
 export function makeMovable(bar, key, { vertical = false } = {}) {
   if (bar.querySelector(":scope > .grip")) return;
   const grip = h(`<button class="grip${vertical ? " v" : ""}" type="button" aria-label="Move this bar (double-click to reset)" title="Drag to move · double-click to reset"><svg width="${vertical ? 14 : 8}" height="${vertical ? 8 : 14}" viewBox="0 0 ${vertical ? "14 8" : "8 14"}" fill="currentColor" aria-hidden="true">${vertical

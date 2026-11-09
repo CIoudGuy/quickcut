@@ -3,11 +3,11 @@
 // screen resolution, and only when something changed. Decoding and export run in a Worker.
 import {
   icon, h, $$, esc, isPhone, fmtBytes, baseName, openLayer, topLayer, toast, pickFiles, intake,
-  recents, renderRecents, session, renderResume, thumbOf, makeMovable, doneCard, download, copyText, copyImage, mod, isTyping, syncSlider,
+  recents, renderRecents, session, renderResume, thumbOf, makeMovable, groupBar, doneCard, download, copyText, copyImage, mod, isTyping, syncSlider,
   recentId, MAX_KEEP_BYTES,
 } from "../shared/ui.js";
 import * as qcut from "../shared/qcut.js";
-import { createKeys } from "../shared/keys.js";
+import { createKeys, baseKey } from "../shared/keys.js";
 import { composite, tree, buffers, mul, T, S, R, ap, inv, scaleOf, reduced, BLENDS, BLEND_MENU, PASS, canvasLimit, fitScale, I } from "./engine.js";
 import { deriveMask, alphaToImageData } from "./maskops.js";
 
@@ -149,6 +149,8 @@ export function mount(root) {
 
   makeMovable(cropBar, "photo.crop");
   makeMovable(propBar, "photo.props");
+  groupBar(cropBar);
+  groupBar(propBar);
   makeMovable(toolsEl, "photo.tools", { vertical: true });
   makeMovable(card, "photo.layers", { vertical: true });
   makeMovable(q(".ph-zoom"), "photo.zoom");
@@ -332,7 +334,7 @@ export function mount(root) {
   function rasterize(l) {
     if (!l || l.group || plain(l)) return true;
     const b = pxBox(aabb(l));
-    if (tooBig(b.w, b.h)) { toast(`Too big (max ${LIM.side} px)`, { bad: true }); return false; }
+    if (tooBig(b.w, b.h)) { toast(tooBigMsg(b.w, b.h), { bad: true }); return false; }
     const A = mul(T(-b.x, -b.y), lm(l)), red = reduced(l.canvas, scaleOf(A));
     record("Rasterize layer", () => {
       const c = blank(b.w, b.h), g = c.getContext("2d"), D = red ? mul(A, S(red.sx, red.sy)) : A;
@@ -364,13 +366,22 @@ export function mount(root) {
   const cver = new WeakMap(); // canvas → pixel version (for the saved session: re-encode only what changed)
   const bump = (c) => cver.set(c, (cver.get(c) || 0) + 1);
   function push(e) {
+    justOpened = false;
     for (const x of hist.splice(hi)) hbytes -= x.bytes;
     hist.push(e); hi++; hbytes += e.bytes;
     while (hbytes > BUDGET && hist.length > 1) { const x = hist.shift(); hi--; hbytes -= x.bytes; }
     syncUndo();
   }
   function undo() {
-    if (gesture || crop) return;
+    if (gesture) return;
+    if (justOpened && doc && !hist.length && !crop && !editing) { closeDoc(); return; }
+    justOpened = false;
+    // in Crop: first take back what was changed in Crop; nothing changed there = leave Crop and undo
+    if (crop) {
+      const changed = cropChanged();
+      cancelCrop();
+      if (changed) { enterCrop(); return; }
+    }
     commitText();
     if (hi <= 0) return;
     const w = doc.w, hh = doc.h;
@@ -378,7 +389,9 @@ export function mount(root) {
     afterHistory(w, hh);
   }
   function redo() {
-    if (gesture || crop || hi >= hist.length) return;
+    justOpened = false;
+    if (gesture || hi >= hist.length) return;
+    if (crop) cancelCrop();
     commitText();
     const w = doc.w, hh = doc.h;
     hist[hi++].redo();
@@ -392,7 +405,7 @@ export function mount(root) {
   }
   function syncUndo() {
     if (!doc) return;
-    btn("undo").disabled = hi <= 0;
+    btn("undo").disabled = hi <= 0 && !justOpened;
     btn("redo").disabled = hi >= hist.length;
     const u = hi > 0 ? `Undo ${hist[hi - 1].label}` : "Undo", r = hi < hist.length ? `Redo ${hist[hi].label}` : "Redo";
     btn("undo").title = K.tip(u, "undo"); btn("undo").setAttribute("aria-label", K.tip(u, "undo"));
@@ -1550,11 +1563,15 @@ export function mount(root) {
     }
     selection = null;
     crop.base = { ...crop.rect };
+    crop.entry = cropState();
     syncCropUI();
     if (prev && view.fitted) fit(view.cap);
     if (prev) saveSession();
     invalidate(true);
   }
+  const cropState = () => JSON.stringify({ r: crop.r, fx: crop.fx, fy: crop.fy, a: crop.a, preset: crop.preset, rect: ["x", "y", "w", "h"].map((k) => Math.round(crop.rect[k] * 100) / 100) });
+  /** Whether anything was changed since Crop opened (box, turn, flip, straighten, preset). */
+  const cropChanged = () => !!crop && cropState() !== crop.entry;
   /** Keep the picture's centre where it is on screen when the working area changes size (same zoom). */
   function keepCentre(w0, h0, w1, h1) { view.ox += ((w0 - w1) / 2) * view.z; view.oy += ((h0 - h1) / 2) * view.z; view.fitted = false; }
   function exitCrop() {
@@ -2064,6 +2081,8 @@ export function mount(root) {
   function whyNot(qv, st = rb.st) {
     if (qv === "fast") return "";
     if (lowMem) return "Not enough memory";
+    // the big models don't fit the CPU engine's memory (WebAssembly: at most 4 GB per page)
+    if (epPref() === "wasm") return "Needs the GPU (Run on: GPU)";
     if (st && !st.models?.[MODEL_OF[qv]]) return "Not installed";
     return st?.models?.[MODEL_OF[qv]]?.unfit || "";
   }
@@ -2108,7 +2127,7 @@ export function mount(root) {
     if (!rb.job) { kill("bg"); rb.warm = null; } // the next run starts the AI where it was asked to
   }
   const epSeg = () => {
-    const cur = epPref(), noGpu = rb.st?.gpu && (!rb.st.gpu.webgpu || rb.st.gpu.fallback) ? "No GPU access in this browser" : "";
+    const cur = epPref(), noGpu = rb.st?.gpu && (!rb.st.gpu.webgpu || rb.st.gpu.fallback) ? (rb.st.gpu.api ? "GPU unavailable right now. Restart the browser" : "No GPU access in this browser") : "";
     return `<div class="field-label ph-ep"><span class="row-between">Run on</span><div class="seg fill" role="radiogroup" aria-label="Run on">${[["auto", "GPU", noGpu], ["wasm", "CPU", ""]].map(([id, n, no]) => `<button type="button" role="radio" data-ep="${id}" aria-checked="${cur === id}" ${no ? `aria-disabled="true" data-no="${esc(no)}" title="${n}: ${esc(no)}"` : `title="${n}"`}>${n}</button>`).join("")}</div></div>`;
   };
   function bindEp(el) {
@@ -2118,6 +2137,9 @@ export function mount(root) {
       if (b.getAttribute("aria-disabled") === "true") { toast(b.dataset.no, { info: true, ms: 4000 }); return; }
       setEp(b.dataset.ep);
       for (const x of el.querySelectorAll("[data-ep]")) x.setAttribute("aria-checked", String(x.dataset.ep === epPref()));
+      // the qualities this choice allows (High detail / Hair & fur need the GPU)
+      const qs = el.querySelector(".field-label:not(.ph-ep)");
+      if (qs?.querySelector("[data-q]")) qs.outerHTML = qualitySeg();
     });
   }
   const fmtMB = (b) => `${Math.round(b / 1e6)} MB`;
@@ -2245,8 +2267,23 @@ export function mount(root) {
     return true;
   }
   function endBg() { rb.job = null; rb.el?.remove(); rb.el = null; }
+  /**
+   * The part of a layer's own pixels that shows in the (cropped) document, with a small margin, or
+   * null when that's (nearly) all of it. The background remover looks only at this part: what was
+   * cropped away mustn't decide what the subject is, and the kept part gets more of the model's pixels.
+   */
+  function visibleRegion(l, src) {
+    const W = src.width, H = src.height, Mi = inv(lm(l));
+    const pts = [[0, 0], [doc.w, 0], [0, doc.h], [doc.w, doc.h]].map(([x, y]) => ap(Mi, x, y));
+    const m = Math.round(Math.max(W, H) * 0.02);
+    const x0 = clamp(Math.floor(Math.min(...pts.map((p) => p[0]))) - m, 0, W), y0 = clamp(Math.floor(Math.min(...pts.map((p) => p[1]))) - m, 0, H);
+    const x1 = clamp(Math.ceil(Math.max(...pts.map((p) => p[0]))) + m, 0, W), y1 = clamp(Math.ceil(Math.max(...pts.map((p) => p[1]))) + m, 0, H);
+    if (x1 - x0 < 8 || y1 - y0 < 8) return null;
+    if ((x1 - x0) * (y1 - y0) >= 0.9 * W * H) return null;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
   async function runBg(l, quality, job = (rb.job = { cancelled: false, t0: performance.now() })) {
-    const d = doc, src = l.preBg || l.canvas, layerId = l.id;
+    const d = doc, src = l.preBg || l.canvas, layerId = l.id, reg = visibleRegion(l, src);
     syncFoot();
     // what to try, in order: the chosen quality; if the GPU fails (driver error, lost device, out of
     // memory), the fast model on the GPU, then on the CPU (WebAssembly): always a result, maybe slower
@@ -2265,7 +2302,7 @@ export function mount(root) {
         });
         if (job.cancelled) return;
         bgProgress(ini.ep !== "webgpu" ? "Finding subject…" : "Finding subject…", null);
-        const bitmap = await createImageBitmap(src);
+        const bitmap = reg ? await createImageBitmap(src, reg.x, reg.y, reg.w, reg.h) : await createImageBitmap(src);
         if (ini?.unsaved && !rb.unsavedShown) { rb.unsavedShown = true; toast("Model not saved: storage full or private window", { info: true, ms: 5000 }); }
         // a GPU driver that resets under load can leave the run hanging: no sign of life for 90 s
         // on the GPU = give up on it (the worker is restarted) and go on with the next way
@@ -2284,6 +2321,9 @@ export function mount(root) {
         if (job.cancelled) return;
         lastErr = e;
         console.warn("bg: attempt failed", t, e);
+        // the next try starts in a fresh worker: a WebAssembly heap never shrinks, so after an
+        // out-of-memory failure the same worker can't even load the smaller model
+        kill("bg"); rb.warm = null;
         if (/isn't installed|download/i.test(e.message)) break; // a missing or broken download won't get better
       }
     }
@@ -2293,11 +2333,24 @@ export function mount(root) {
       if (doc !== d) { r.mask.close(); r.color?.close(); endBg(); return; }
       const cur = doc.layers.find((x) => x.id === layerId);
       if (!cur || (cur.preBg || cur.canvas) !== src) { r.mask.close(); r.color?.close(); endBg(); toast("Layer changed. Try again", { bad: true }); return; }
-      const mc = blank(r.w, r.h);
-      mc.getContext("2d").drawImage(r.mask, 0, 0);
+      // the result covers the visible part; the rest of the layer (cropped away) counts as removed
+      const W = src.width, H = src.height, ox = reg ? reg.x : 0, oy = reg ? reg.y : 0;
+      const mc = blank(W, H);
+      mc.getContext("2d").drawImage(r.mask, ox, oy);
       r.mask.close();
+      if (reg) {
+        const full = new Uint8Array(W * H);
+        for (let y = 0; y < r.h; y++) full.set(r.alpha.subarray(y * r.w, (y + 1) * r.w), (y + oy) * W + ox);
+        r.alpha = full;
+      }
       let fixed = null;
-      if (r.color) { fixed = blank(r.w, r.h); fixed.getContext("2d").drawImage(r.color, 0, 0); r.color.close(); }
+      if (r.color) {
+        fixed = blank(W, H);
+        const fg = fixed.getContext("2d");
+        if (reg) { fg.drawImage(src, 0, 0); fg.clearRect(ox, oy, r.w, r.h); }
+        fg.drawImage(r.color, ox, oy);
+        r.color.close();
+      }
       const prevTool = tool;
       const did = record(used.q === "fast" ? "Remove background" : `Remove background (${QUALITIES.find((x) => x[0] === used.q)?.[1].toLowerCase() || used.q})`, () => {
         Object.assign(cur, { mask: mc, maskBase: r.alpha, maskOn: true, maskShift: 0, maskSoft: 0 });
@@ -2741,9 +2794,12 @@ export function mount(root) {
     return c;
   }
   /** A layer as a draw item; a smart layer drawn much smaller than its source comes from a reduced copy (no aliasing). */
+  /** The pixels a layer shows: with its mask hidden, a background-removed layer shows the original
+   *  photo (the cleaned edge colours only belong with the cut-out). */
+  const shownPx = (l) => (l.mask && !l.maskOn && l.preBg && l.canvas === l.bgFixed ? l.preBg : l.canvas);
   const asDraw = (l, o = {}) => {
-    const m = lm(l), k0 = scaleOf(m), r = reduced(l.canvas, k0), mr = l.mask && l.maskOn ? reduced(l.mask, k0) : null;
-    return { id: l.id, parent: l.parent ?? null, src: l.canvas, ...r, m, x: l.x, y: l.y, opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip, mask: l.mask && l.maskOn ? (mr || { src: l.mask }) : null, ...o };
+    const src = shownPx(l), m = lm(l), k0 = scaleOf(m), r = reduced(src, k0), mr = l.mask && l.maskOn ? reduced(l.mask, k0) : null;
+    return { id: l.id, parent: l.parent ?? null, src, ...r, m, x: l.x, y: l.y, opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip, mask: l.mask && l.maskOn ? (mr || { src: l.mask }) : null, ...o };
   };
   /** Pixels covering some layers (what's outside the canvas too), or the canvas if that would be too big. */
   function mergeBox(ls) { const b = pxBox(unionBox(ls)); return tooBig(b.w, b.h) ? { x: 0, y: 0, w: doc.w, h: doc.h } : b; }
@@ -2929,18 +2985,19 @@ export function mount(root) {
   // kept small, so redrawing the Layers card (every undo, every change) never re-reads a big canvas.
   const thumbCache = new WeakMap(); // layer canvas → {key, c}
   function smallOf(l, s) {
-    const key = `${s}|${verOf(l.canvas)}|${l.mask && l.maskOn ? `${verOf(l.mask)}|${thumbMaskId(l.mask)}` : "-"}`;
-    const hit = thumbCache.get(l.canvas);
+    const px = shownPx(l);
+    const key = `${s}|${verOf(px)}|${l.mask && l.maskOn ? `${verOf(l.mask)}|${thumbMaskId(l.mask)}` : "-"}`;
+    const hit = thumbCache.get(px);
     if (hit && hit.key === key) return hit.c;
-    const w = Math.max(1, Math.ceil(l.canvas.width * s)), hh = Math.max(1, Math.ceil(l.canvas.height * s));
+    const w = Math.max(1, Math.ceil(px.width * s)), hh = Math.max(1, Math.ceil(px.height * s));
     const c = hit?.c && hit.c.width === w && hit.c.height === hh ? hit.c : new OffscreenCanvas(w, hh), t = c.getContext("2d");
     t.globalCompositeOperation = "copy";
     t.imageSmoothingQuality = "high";
     // big layers: from their small mip level (already kept for the view) when there is one
-    const src = levelFor(l.canvas, Math.max(s, 1e-6) * 1.5)?.src || l.canvas;
+    const src = levelFor(px, Math.max(s, 1e-6) * 1.5)?.src || px;
     t.drawImage(src, 0, 0, w, hh);
     if (l.mask && l.maskOn) { t.globalCompositeOperation = "destination-in"; t.drawImage(levelFor(l.mask, Math.max(s, 1e-6) * 1.5)?.src || l.mask, 0, 0, w, hh); }
-    thumbCache.set(l.canvas, { key, c });
+    thumbCache.set(px, { key, c });
     return c;
   }
   const maskIds = new WeakMap();
@@ -3410,69 +3467,61 @@ export function mount(root) {
     props = crop ? ppAll[0] : ppAll[1];
     let html = "";
     if (mode === "crop") {
-      html = `<div class="seg" role="radiogroup" aria-label="Aspect ratio">${ASPECTS.map(([a]) => `<button type="button" role="radio" data-aspect="${a}" aria-checked="${crop.preset === a}">${a}</button>`).join("")}</div>
-        <span class="sep"></span>
+      html = `<span class="grp"><button class="btn-2 ph-aspect" type="button" data-p="aspect" aria-haspopup="menu" aria-expanded="false" aria-label="Aspect ratio: ${esc(crop.preset)}" title="Aspect ratio"><span class="v">${esc(crop.preset)}</span>${icon("chev", 12)}</button></span>
+        <span class="grp" role="group" aria-label="Rotate and flip">
         <button class="ib" type="button" data-p="rot" aria-label="${K.tip("Rotate 90°", "rotate")}" title="${K.tip("Rotate 90°", "rotate")}">${icon("rotate")}</button>
         <button class="ib" type="button" data-p="fliph" aria-label="Flip horizontal" title="Flip horizontal">${icon("flipH")}</button>
         <button class="ib" type="button" data-p="flipv" aria-label="Flip vertical" title="Flip vertical">${icon("flipV")}</button>
-        <button class="btn-g" type="button" data-p="creset" title="Reset">Reset</button>
-        <span class="sep"></span>
-        <label class="lbl"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Straighten"><path d="M2 12.5h12M3.5 12.5L12 5M9.5 12.5a3 3 0 0 0-.8-2.1"/></svg><span class="ph-straight"><input class="slider neutral" type="range" min="-45" max="45" step="0.1" value="${crop.a}" data-default="0" data-p="angle" aria-label="Straighten"></span><span class="val" data-v="angle"></span></label>
-        <span class="sep"></span>
-        <span class="grp"><label class="lbl">W<span class="num"><input type="text" inputmode="numeric" data-p="cw" aria-label="Crop width"><span class="unit">px</span></span></label>
-        <button class="ib" type="button" data-p="lock" aria-label="Keep aspect ratio" title="Keep aspect ratio">${icon("link")}</button>
-        <label class="lbl">H<span class="num"><input type="text" inputmode="numeric" data-p="ch" aria-label="Crop height"><span class="unit">px</span></span></label>
+        <label class="lbl ph-straighten" title="Straighten"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Straighten"><path d="M2 12.5h12M3.5 12.5L12 5M9.5 12.5a3 3 0 0 0-.8-2.1"/></svg><span class="ph-straight"><input class="slider neutral" type="range" min="-45" max="45" step="0.1" value="${crop.a}" data-default="0" data-p="angle" aria-label="Straighten"></span><span class="val" data-v="angle"></span></label></span>
+        <span class="grp" role="group" aria-label="Size"><span class="ph-wh"><label>W<input type="text" inputmode="numeric" data-p="cw" aria-label="Crop width"></label><button class="ib" type="button" data-p="lock" aria-label="Keep aspect ratio" title="Keep aspect ratio">${icon("link", 14)}</button><label>H<input type="text" inputmode="numeric" data-p="ch" aria-label="Crop height"></label><span class="unit">px</span></span>
         ${snapBtn()}</span>
-        <span class="sep desk-only"></span><span class="grp desk-only">
-        <button class="btn-g desk-only" type="button" data-p="cancel">Cancel<span class="kbd">Esc</span></button>
-        <button class="btn-p desk-only" type="button" data-p="apply">Apply<span class="kbd">↵</span></button></span>`;
+        <span class="grp end"><button class="btn-g" type="button" data-p="creset" title="Reset">Reset</button>
+        <button class="btn-g desk-only" type="button" data-p="cancel" title="Cancel (Esc)">Cancel<span class="kbd">Esc</span></button>
+        <button class="btn-p desk-only" type="button" data-p="apply" title="Apply (Enter)">Apply<span class="kbd">↵</span></button></span>`;
     } else if (mode === "move") {
       const l = selNode();
-      html = l ? `<span class="lname">${l.group ? `<span class="lthumb fd">${icon("folder", 16)}</span>` : l.kind === "text" ? `<span class="tg lthumb" style="display:inline-flex;align-items:center;justify-content:center;background:#3A3A3E;color:#fff;font:600 11px var(--font)">T</span>` : `<canvas class="lthumb"></canvas>`}<span>${l.kind === "text" && !l.named ? "Text layer" : esc(l.name)}</span></span>
-        <span class="sep"></span>
-        ${snapBtn()}
-        ${!l.group && !plain(l) ? `<span class="sep"></span>${tfLabel(l)}<button class="btn-g" type="button" data-p="tfreset" title="Reset transform">Reset</button><button class="btn-g" type="button" data-p="raster" title="Rasterize">Rasterize</button>` : ""}
-        ${l.kind && l.kind !== "text" ? `<span class="sep"></span>${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}` : ""}`
+      html = l ? `<span class="grp"><span class="lname">${l.group ? `<span class="lthumb fd">${icon("folder", 16)}</span>` : l.kind === "text" ? `<span class="tg lthumb" style="display:inline-flex;align-items:center;justify-content:center;background:#3A3A3E;color:#fff;font:600 11px var(--font)">T</span>` : `<canvas class="lthumb"></canvas>`}<span>${l.kind === "text" && !l.named ? "Text layer" : esc(l.name)}</span></span></span>
+        <span class="grp">${snapBtn()}</span>
+        ${!l.group && !plain(l) ? `<span class="grp" role="group" aria-label="Transform">${tfLabel(l)}<button class="btn-g" type="button" data-p="tfreset" title="Reset transform">Reset</button><button class="btn-g" type="button" data-p="raster" title="Rasterize">Rasterize</button></span>` : ""}
+        ${l.kind && l.kind !== "text" ? `<span class="grp end">${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}</span>` : ""}`
         : "";
     } else if (mode === "select") {
-      html = `${noMods() ? `<div class="seg ph-selmode" role="radiogroup" aria-label="Selection mode">${SEL_OPS.map(([id, label]) => `<button type="button" role="radio" data-sm="${id}" aria-checked="${selMode === id}" aria-label="${label}" title="${label}">${icon(PI[{ new: "selNew", add: "selAdd", sub: "selSub", int: "selInt" }[id]], 16)}</button>`).join("")}</div>
-        <span class="sep"></span>` : ""}<button class="btn-g" type="button" data-p="all" title="${K.tip("Select all", "selectAll")}">All</button>
+      html = `${noMods() ? `<span class="grp"><div class="seg ph-selmode" role="radiogroup" aria-label="Selection mode">${SEL_OPS.map(([id, label]) => `<button type="button" role="radio" data-sm="${id}" aria-checked="${selMode === id}" aria-label="${label}" title="${label}">${icon(PI[{ new: "selNew", add: "selAdd", sub: "selSub", int: "selInt" }[id]], 16)}</button>`).join("")}</div></span>` : ""}
+        <span class="grp"><button class="btn-g" type="button" data-p="all" title="${K.tip("Select all", "selectAll")}">All</button>
         <button class="btn-g" type="button" data-p="desel" title="${K.tip("Deselect", "deselect")}" ${selection ? "" : "disabled"}>Deselect</button>
-        <button class="btn-g" type="button" data-p="inv" title="${K.tip("Invert", "invert")}" ${selection ? "" : "disabled"}>Invert</button>
-        <button class="btn-g" type="button" data-p="tolayer" title="${K.tip("Copy to layer", "duplicate")}" ${selection ? "" : "disabled"}>Copy to layer</button>
-        <button class="btn-g" type="button" data-p="clear" title="${K.tip("Clear", "delete")}" ${selection ? "" : "disabled"}>Clear</button>`;
+        <button class="btn-g" type="button" data-p="inv" title="${K.tip("Invert", "invert")}" ${selection ? "" : "disabled"}>Invert</button></span>
+        <span class="grp"><button class="btn-g" type="button" data-p="tolayer" title="${K.tip("Copy to layer", "duplicate")}" ${selection ? "" : "disabled"}>Copy to layer</button>
+        <button class="btn-g" type="button" data-p="clear" title="${K.tip("Clear", "delete")}" ${selection ? "" : "disabled"}>Clear</button></span>`;
     } else if (mode === "mask") {
       const l = selLayer(), has = !!l?.mask, o = maskBrush;
-      const views = [["photo", "Photo", "Photo"], ["mask", "Mask", "Mask (\)"], ["color", "Colour", "Colour"]];
-      html = `<div class="seg" role="radiogroup" aria-label="Brush">${[["keep", "Keep", K.tip("Keep", "keepRemove")], ["remove", "Remove", K.tip("Remove", "keepRemove")]].map(([id, n, t]) => `<button type="button" role="radio" data-mb="${id}" aria-checked="${o.mode === id}" title="${t}">${n}</button>`).join("")}</div>
-        ${sliderRow("Size", "size", 0, 100, sizeToSlider(o.size), `${o.size} px`, 80, sizeToSlider(60))}
-        ${sliderRow("Hardness", "hard", 0, 100, o.hard, `${o.hard}%`, 64, 70)}
-        <span class="sep"></span>
-        <div class="seg" role="radiogroup" aria-label="View">${views.map(([id, n, t]) => `<button type="button" role="radio" data-bv="${id}" aria-checked="${rb.view === id}" title="${t}">${n}</button>`).join("")}</div>
-        ${rb.view === "color" ? `<label class="ph-swatch" title="View colour" style="background:${rb.viewColor}"><input type="color" data-p="viewcolor" value="${rb.viewColor}" aria-label="View colour"></label>` : ""}
-        <span class="sep"></span>
-        <button class="btn-g" type="button" data-p="maskinv" ${has ? "" : "disabled"} title="${K.tip("Invert mask", "invertMask")}">Invert</button>
+      const views = [["photo", "Photo", "Photo"], ["mask", "Mask", "Mask (\\)"], ["color", "Colour", "Colour"]];
+      html = `<span class="grp"><div class="seg" role="radiogroup" aria-label="Brush">${[["keep", "Keep", K.tip("Keep", "keepRemove")], ["remove", "Remove", K.tip("Remove", "keepRemove")]].map(([id, n, t]) => `<button type="button" role="radio" data-mb="${id}" aria-checked="${o.mode === id}" title="${t}">${n}</button>`).join("")}</div></span>
+        <span class="grp ph-sliders">${sliderRow("Size", "size", 0, 100, sizeToSlider(o.size), `${o.size} px`, 80, sizeToSlider(60))}
+        ${sliderRow("Hardness", "hard", 0, 100, o.hard, `${o.hard}%`, 64, 70)}</span>
+        <span class="grp"><div class="seg" role="radiogroup" aria-label="View">${views.map(([id, n, t]) => `<button type="button" role="radio" data-bv="${id}" aria-checked="${rb.view === id}" title="${t}">${n}</button>`).join("")}</div>
+        ${rb.view === "color" ? `<label class="ph-swatch" title="View colour" style="background:${rb.viewColor}"><input type="color" data-p="viewcolor" value="${rb.viewColor}" aria-label="View colour"></label>` : ""}</span>
+        <span class="grp"><button class="btn-g" type="button" data-p="maskinv" ${has ? "" : "disabled"} title="${K.tip("Invert mask", "invertMask")}">Invert</button>
         <button class="btn-2" type="button" data-p="edge" aria-haspopup="dialog" ${has ? "" : "disabled"} title="Edge">Edge${icon("chev", 12)}</button>
         <button class="btn-2" type="button" data-p="backdrop" aria-haspopup="dialog" title="Background">Background${icon("chev", 12)}</button>
-        ${has ? `<label class="switch" title="Mask"><input type="checkbox" data-p="maskon" ${l.maskOn ? "checked" : ""}><span class="track"></span>Mask</label>` : `<button class="btn-p" type="button" data-p="rmbg" title="Remove background (Shift B)">${icon(PI.cutout)}Remove background</button>`}`;
+        ${has ? `<label class="switch" title="Mask"><input type="checkbox" data-p="maskon" ${l.maskOn ? "checked" : ""}><span class="track"></span>Mask</label>` : ""}</span>
+        ${has ? "" : `<span class="grp end"><button class="btn-p" type="button" data-p="rmbg" title="Remove background (Shift B)">${icon(PI.cutout)}Remove background</button></span>`}`;
     } else if (mode === "brush" || mode === "eraser") {
       const o = mode === "brush" ? brush : eraser;
-      html = `${sliderRow("Size", "size", 0, 100, sizeToSlider(o.size), `${o.size} px`, 88, sizeToSlider(mode === "brush" ? 40 : 80))}
+      html = `<span class="grp ph-sliders">${sliderRow("Size", "size", 0, 100, sizeToSlider(o.size), `${o.size} px`, 88, sizeToSlider(mode === "brush" ? 40 : 80))}
         ${sliderRow("Hardness", "hard", 0, 100, o.hard, `${o.hard}%`, 72, 80)}
-        ${sliderRow("Opacity", "bop", 1, 100, o.opacity, `${o.opacity}%`, 72)}
-        ${mode === "brush" ? `<span class="sep"></span><label class="ph-swatch" title="Brush colour" style="background:${brush.color}"><input type="color" data-p="color" value="${brush.color}" aria-label="Brush colour"></label><label class="ph-swatch bg" title="Background colour (X)" style="background:${brush.bg}"><input type="color" data-p="bgcolor" value="${brush.bg}" aria-label="Background colour"></label>` : ""}`;
+        ${sliderRow("Opacity", "bop", 1, 100, o.opacity, `${o.opacity}%`, 72)}</span>
+        ${mode === "brush" ? `<span class="grp ph-colours"><label class="ph-swatch" title="Brush colour" style="background:${brush.color}"><input type="color" data-p="color" value="${brush.color}" aria-label="Brush colour"></label><label class="ph-swatch bg" title="Background colour (X)" style="background:${brush.bg}"><input type="color" data-p="bgcolor" value="${brush.bg}" aria-label="Background colour"></label></span>` : ""}`;
     } else if (mode === "text") {
       const l = selLayer(), t = l?.kind === "text" ? l.text : textOpts;
-      html = `<label class="lbl">Size<span class="num sm"><input type="text" inputmode="numeric" data-p="tsize" value="${Math.round(t.size)}" aria-label="Font size"><span class="unit">px</span></span></label>
-        <label class="ph-swatch" title="Text colour" style="background:${t.color}"><input type="color" data-p="tcolor" value="${t.color}" aria-label="Text colour"></label>
-        <span class="sep"></span>
-        <button class="btn-2 ph-fontbtn" type="button" data-p="font" aria-haspopup="dialog" title="Font"><span style="font-family:'${esc((t.font || "Inter").replace(/'/g, ""))}', Inter, sans-serif">${esc(t.font || "Inter")}</span><span class="small">${esc(t.style || "")}</span>${icon("chev", 12)}</button>
-        <div class="seg" role="radiogroup" aria-label="Alignment">${[["left", PI.alignL], ["center", PI.alignC], ["right", PI.alignR]].map(([a, d]) => `<button type="button" role="radio" data-align="${a}" aria-checked="${t.align === a}" aria-label="Align ${a}">${icon(d, 14)}</button>`).join("")}</div>
+      html = `<span class="grp"><button class="btn-2 ph-fontbtn" type="button" data-p="font" aria-haspopup="dialog" title="Font"><span style="font-family:'${esc((t.font || "Inter").replace(/'/g, ""))}', Inter, sans-serif">${esc(t.font || "Inter")}</span><span class="small">${esc(t.style || "")}</span>${icon("chev", 12)}</button></span>
+        <span class="grp"><label class="lbl">Size<span class="num sm"><input type="text" inputmode="numeric" data-p="tsize" value="${Math.round(t.size)}" aria-label="Font size"><span class="unit">px</span></span></label>
+        <label class="ph-swatch" title="Text colour" style="background:${t.color}"><input type="color" data-p="tcolor" value="${t.color}" aria-label="Text colour"></label></span>
+        <span class="grp"><div class="seg" role="radiogroup" aria-label="Alignment">${[["left", PI.alignL], ["center", PI.alignC], ["right", PI.alignR]].map(([a, d]) => `<button type="button" role="radio" data-align="${a}" aria-checked="${t.align === a}" aria-label="Align ${a}" title="Align ${a}">${icon(d, 14)}</button>`).join("")}</div></span>
 `;
     } else if (mode === "eyedrop") {
       const c = picked || brush.color;
-      html = `<span class="ph-pick"><span class="ph-swatch" style="background:${c}"></span><span class="hex">${c}</span></span>
-        <button class="btn-g" type="button" data-p="copyhex">${icon("copy")}Copy</button>
+      html = `<span class="grp"><span class="ph-pick"><span class="ph-swatch" style="background:${c}"></span><span class="hex">${c}</span></span></span>
+        <span class="grp"><button class="btn-g" type="button" data-p="copyhex" title="Copy">${icon("copy")}Copy</button></span>
 `;
     }
     props.innerHTML = html;
@@ -3491,7 +3540,8 @@ export function mount(root) {
     const cw = props.querySelector('[data-p="cw"]'), chh = props.querySelector('[data-p="ch"]');
     if (cw && (force || document.activeElement !== cw)) cw.value = Math.round(r.w);
     if (chh && (force || document.activeElement !== chh)) chh.value = Math.round(r.h);
-    for (const b of props.querySelectorAll("[data-aspect]")) b.setAttribute("aria-checked", String(b.dataset.aspect === crop.preset));
+    const ap = props.querySelector('[data-p="aspect"]');
+    if (ap) { ap.querySelector(".v").textContent = crop.preset; ap.setAttribute("aria-label", `Aspect ratio: ${crop.preset}`); }
     const lk = props.querySelector('[data-p="lock"]');
     if (lk) { lk.setAttribute("aria-pressed", String(crop.lock)); lk.setAttribute("aria-label", `Keep aspect ratio (${crop.lock ? "on" : "off"})`); }
     const an = props.querySelector('[data-p="angle"]');
@@ -3499,6 +3549,12 @@ export function mount(root) {
     saveSession();
     const av = props.querySelector('[data-v="angle"]');
     if (av) av.textContent = `${crop.a < 0 ? "−" : ""}${Math.abs(crop.a).toFixed(1)}°`;
+  }
+  function openAspectMenu(anchor) {
+    if (!crop) return;
+    const el = h(`<div class="ph-menu" role="menu" aria-label="Aspect ratio">${ASPECTS.map(([a]) => `<button type="button" role="menuitemradio" data-aspect="${a}" aria-checked="${crop.preset === a}"><span class="ck">${crop.preset === a ? icon("check", 14, { stroke: 2 }) : ""}</span>${a}</button>`).join("")}</div>`);
+    const L = openLayer(el, { anchor, width: 148, reopen: false, sheet: isPhone() || coarse() });
+    el.addEventListener("click", (e) => { const b = e.target.closest("[data-aspect]"); if (b) { L.close(); if (crop) applyPreset(b.dataset.aspect); } });
   }
   function syncCropUI() {
     const on = !!crop;
@@ -3531,6 +3587,7 @@ export function mount(root) {
       case "edge": return openEdge(b);
       case "backdrop": return openBackdrop(b);
       case "font": return openFonts(b);
+      case "aspect": return openAspectMenu(b);
       case "rot": return rotate90();
       case "fliph": return flip(true);
       case "flipv": return flip(false);
@@ -3739,11 +3796,13 @@ export function mount(root) {
 
   // ── resize ────────────────────────────────────────────────────────────────
   const tooBig = (w, hh) => w > LIM.side || hh > LIM.side || w * hh > LIM.area;
+  /** "Too big · max 7311 × 10958 px": the largest size of the same shape that fits (side and pixel-count limits). */
+  const tooBigMsg = (w, hh) => { const f = fitScale(w, hh, LIM); return `Too big · max ${Math.max(1, Math.floor(w * f))} × ${Math.max(1, Math.floor(hh * f))} px`; };
   // Resize image is smart: every layer keeps its source and only its matrix is scaled (it's
   // resampled from the source when drawn), so going back up to the old size is exact. Text is
   // redrawn at the new font size (sharp) when the scale is even.
   function resizeImage(w, hh) {
-    if (tooBig(w, hh)) { toast(`Too big (max ${LIM.side} px)`, { bad: true }); return; }
+    if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return; }
     const sx = w / doc.w, sy = hh / doc.h, even = Math.abs(sx - sy) < 1e-9;
     record("Resize image", () => {
       for (const l of doc.layers) {
@@ -3765,7 +3824,7 @@ export function mount(root) {
     invalidate(true);
   }
   function resizeCanvas(w, hh) {
-    if (tooBig(w, hh)) { toast(`Too big (max ${LIM.side} px)`, { bad: true }); return; }
+    if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return; }
     const dx = Math.round((w - doc.w) / 2), dy = Math.round((hh - doc.h) / 2);
     record("Canvas size", () => {
       // layers keep what's now outside the canvas (it comes back if the canvas grows again)
@@ -3953,7 +4012,7 @@ export function mount(root) {
   async function startExport() {
     if (ex.phase === "busy") return;
     const [w, hh] = outSize(), f = FORMATS[ex.fmt];
-    if (tooBig(w, hh)) { toast(`Too big (max ${LIM.side} px)`, { bad: true }); return; }
+    if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return; }
     ex.name = (ex.name || defaultName()).trim() || "photo";
     ex.file = `${ex.name}.${f[2]}`;
     ex.phase = "busy";
@@ -4060,12 +4119,44 @@ export function mount(root) {
     if (!asLayers) { if (!(await openDoc(files[0]))) return; i = 1; }
     for (; i < files.length; i++) await addImageLayer(files[i].file);
   }
+  // Opened the wrong picture: the first Undo right after opening (nothing done yet) closes it again
+  // and shows the start screen. Anything else (an edit, a click, a key, the wheel) ends that chance.
+  let justOpened = false, openedResumed = false, resuming = false;
+  const notJustOpened = () => { if (!justOpened) return; justOpened = false; syncUndo(); };
+  document.addEventListener("keydown", (e) => { if (justOpened && baseKey(e) && K.match(e)?.a.id !== "undo") notJustOpened(); }, true);
+  document.addEventListener("pointerdown", (e) => { if (justOpened && !e.target.closest?.('[data-kact="undo"]')) notJustOpened(); }, true);
+  document.addEventListener("wheel", notJustOpened, { capture: true, passive: true });
+  /** Back to the start screen as if the document had never been opened (its file stays in Recents). */
+  function closeDoc() {
+    justOpened = false;
+    commitText();
+    if (ex.lay) ex.lay.close();
+    clearTimeout(saveT); saveT = 0; savedSeq = editSeq;
+    crop = null; selection = null; stroke = null; gesture = null; pendingBefore = null;
+    hist = []; hi = 0; hbytes = 0;
+    multi.clear(); collapsed.clear();
+    doc = null;
+    stopAnts();
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    // the workers keep a copy of the document: end them (they start again when needed)
+    for (const n of Object.keys(pool)) if (!pool[n].pending.size) kill(n);
+    lyList.replaceChildren();
+    for (const pp of ppAll) pp.innerHTML = "";
+    Object.assign(ex, { name: "", phase: "form", blob: null });
+    docEl.hidden = true;
+    emptyEl.hidden = false;
+    showRecents();
+    // a new file replaced the saved session: it goes too (a Continue keeps its session)
+    if (openedResumed) showResume(); else session.clear("photo").then(showResume, showResume);
+  }
   /** Switch to a new document (history, export state and view start fresh). */
   function enterDoc(d, { toolName = "move", cropState = null, viewState = null } = {}) {
     commitText();
     if (ex.lay) ex.lay.close();
     crop = null; selection = null; stroke = null; gesture = null; pendingBefore = null;
     hist = []; hi = 0; hbytes = 0;
+    justOpened = true; openedResumed = resuming;
     doc = d;
     doc.groups ||= [];
     multi.clear();
@@ -4465,6 +4556,10 @@ export function mount(root) {
   }
   /** Continue: the saved session (a project, or an old session's state). */
   async function resume(rec) {
+    resuming = true;
+    try { return await resumeIn(rec); } finally { resuming = false; }
+  }
+  async function resumeIn(rec) {
     if (rec?.project) return openProject(rec.project, { pid: rec.pid, handle: rec.handle || null, relink: () => session.file(rec) });
     const st = rec?.state;
     if (!st?.layers?.length) { toast("Couldn't restore that session.", { bad: true }); return; }
@@ -4526,6 +4621,7 @@ export function mount(root) {
   async function addImageLayer(file) {
     let r;
     try { r = await decode(file); } catch (e) { toast(e.message, { bad: true }); return; }
+    if (crop) applyCrop(); // like pasting: the new layer and its undo step belong to the cropped document
     const bw = r.bitmap.width, bh = r.bitmap.height, s = Math.min(1, doc.w / bw, doc.h / bh);
     const full = blank(bw, bh);
     full.getContext("2d").drawImage(r.bitmap, 0, 0);
@@ -4745,6 +4841,7 @@ export function mount(root) {
     else record("Cut", () => { l.canvas = blank(l.canvas.width, l.canvas.height); delete l.preBg; delete l.bgFixed; if (l.kind === "text") { l.kind = "image"; delete l.text; } });
   }
   function pasteCanvas(c, { x, y, name, inPlace } = {}) {
+    if (crop) applyCrop(); // the new layer and its undo step belong to the cropped document
     // bigger than the canvas: kept at full size (a smart layer), scaled to fit by its matrix
     const s = !inPlace && (c.width > doc.w || c.height > doc.h) ? Math.min(doc.w / c.width, doc.h / c.height) : 1, scaled = s < 1;
     const w = c.width * s, hh = c.height * s;
@@ -4868,10 +4965,11 @@ export function mount(root) {
     get collapsed() { return [...collapsed]; }, toggleCollapsed: (id) => { if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id); renderLayers(); saveSession(); },
     addMask: () => addMask(selLayer()),
     get tool() { return tool; },
+    drawnPx: (l) => asDraw(l).src,
     // smart layers / crop / resize / session (tests)
     get crop() { return crop; }, lm: (l) => lm(l), resizeImage: (w, hh) => resizeImage(w, hh), resizeCanvas: (w, hh) => resizeCanvas(w, hh),
     rasterize: () => rasterize(selLayer()), resetTransform: () => resetTransform(selLayer()), setCrop: (o) => { Object.assign(crop, o); crop.base = { ...crop.rect }; invalidate(true); },
-    undo: () => undo(), redo: () => redo(),
+    undo: () => undo(), redo: () => redo(), get isOpen() { return !!doc && !docEl.hidden; },
     async record() { const d = doc, project = await writeProject(d, "quick"); return project && sessRec(d, project); }, resume: (rec) => resume(rec),
     openProject: (blob, o) => openProject(blob, o), saveProject: () => saveProject(), writeProject: (mode = "best") => writeProject(doc, mode, { fit: false }), flush: () => runSave(),
     /** Memory self-check: what the document, its undo steps and the workers hold (+ the browser's own figure where it gives one). */

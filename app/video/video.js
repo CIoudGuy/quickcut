@@ -255,6 +255,9 @@ export function mount(root) {
   let guideT = null; // timeline snap guide
   let C = { M: I2, rect: null, aspect: "Free" }; // applied crop & rotate
   let past = [], future = [];
+  // just opened (a wrong file dropped or pasted): the first Undo, with nothing to undo, goes back to the start screen;
+  // anything else the user does first clears it for good
+  let justOpened = false;
   let L = null; // layout
   let tl = 0; // playhead, timeline seconds
   let loopOn = prefs.loopOn ?? true, muted = !!prefs.muted;
@@ -299,7 +302,7 @@ export function mount(root) {
   // read-only numbers for checking the tool (seek and open times, the edit)
   // (tests) set the pieces like an edit would: [[start, end, speed, volume], …]
   const setPieces = (list) => { commit("Edit"); P = list.map(([start, end, speed = 1, volume = 1]) => ({ id: nextId++, start, end, speed, volume })); selIds = []; changed(); };
-  const stats = (window.__qcVideo = { setPieces, thumbCount: () => thumbs.size, keys: () => doc?.keys?.length, mode: () => ({ stepMode, shuttle }), zoomInfo: () => ({ pps, fit: fitPps(), scrollX, guideT, padL: G.padL, zf, snapOn }), seeks: [], opens: [], state: () => ({ P: P.map((p) => [+p.start.toFixed(3), +p.end.toFixed(3), p.speed, p.volume]), sel: selIds.map((id) => P.findIndex((p) => p.id === id)), C, tl, total: L?.total, playing, job: job && { state: job.state, mode: job.mode, frac: job.frac, stage: job.stage, left: job.left, fps: job.fps }, lastDone: lastDone && { name: lastDone.name, bytes: lastDone.bytes, secs: lastDone.secs }, unfinished: () => unfinished.map((u) => ({ id: u.id, name: u.j.name, pct: jobPct(u.j) })) }) });
+  const stats = (window.__qcVideo = { setPieces, justOpened: () => justOpened, thumbCount: () => thumbs.size, keys: () => doc?.keys?.length, mode: () => ({ stepMode, shuttle }), zoomInfo: () => ({ pps, fit: fitPps(), scrollX, guideT, padL: G.padL, zf, snapOn }), seeks: [], opens: [], state: () => ({ P: P.map((p) => [+p.start.toFixed(3), +p.end.toFixed(3), p.speed, p.volume]), sel: selIds.map((id) => P.findIndex((p) => p.id === id)), C, tl, total: L?.total, playing, job: job && { state: job.state, mode: job.mode, frac: job.frac, stage: job.stage, left: job.left, fps: job.fps }, lastDone: lastDone && { name: lastDone.name, bytes: lastDone.bytes, secs: lastDone.secs }, unfinished: () => unfinished.map((u) => ({ id: u.id, name: u.j.name, pct: jobPct(u.j) })) }) });
 
   // ── open a file ──────────────────────────────────────────────────────────
   intake(root, (files) => openDropped(files), { isActive: () => active && !job, filter: (f) => isVideo(f) || maybeProject(f) });
@@ -532,7 +535,7 @@ export function mount(root) {
     q(".file .m").textContent = `${d.W}×${d.H} · ${fmtFps(info || cache ? d.fps : 0)} fps · ${fmtTime(d.dur, { cs: false })}`;
     busyEl.hidden = true;
     P = [{ id: nextId++, start: 0, end: d.dur, speed: 1, volume: 1 }];
-    selIds = []; anchorId = null; C = { M: I2, rect: null, aspect: "Free" }; past = []; future = [];
+    selIds = []; anchorId = null; C = { M: I2, rect: null, aspect: "Free" }; past = []; future = []; justOpened = true;
     tl = 0; zoomFit();
     lastForm.name = `${baseName(file.name)}_trim`;
     if (typeof prefs.zoom === "number" && prefs.zoom > 0) zoomZ = clamp(prefs.zoom, 0, 1);
@@ -617,11 +620,16 @@ export function mount(root) {
   // ── model ────────────────────────────────────────────────────────────────
   const snap = () => JSON.stringify({ P, selIds, C });
   // history: one step per edit (a drag is one step); each step names its action for the tooltips
-  function pushHist(before, label) { past.push({ s: before, label }); if (past.length > 300) past.shift(); future = []; }
+  function pushHist(before, label) { clearJustOpened(); past.push({ s: before, label }); if (past.length > 300) past.shift(); future = []; }
   function commit(label) { pushHist(snap(), label); }
   function restore(s) { const o = JSON.parse(s); P = o.P; selIds = o.selIds || []; C = o.C; changed(); }
-  function undo() { if (!past.length) return; const e = past.pop(); future.push({ s: snap(), label: e.label }); restore(e.s); }
-  function redo() { if (!future.length) return; const e = future.pop(); past.push({ s: snap(), label: e.label }); restore(e.s); }
+  function clearJustOpened() { if (justOpened) { justOpened = false; if (doc && L) changed(); } }
+  function undo() {
+    if (justOpened && !past.length) { justOpened = false; closeDoc(); showEmpty(); return; }
+    clearJustOpened();
+    if (!past.length) return;
+    const e = past.pop(); future.push({ s: snap(), label: e.label }); restore(e.s); }
+  function redo() { clearJustOpened(); if (!future.length) return; const e = future.pop(); past.push({ s: snap(), label: e.label }); restore(e.s); }
   const minLen = () => Math.max(1 / (doc?.fps || 30), 0.04);
   const sel = () => P.find((p) => selIds.includes(p.id)) || null;
   const selected = () => P.filter((p) => selIds.includes(p.id));
@@ -648,7 +656,7 @@ export function mount(root) {
     L = layout();
     tl = clamp(tl, 0, L.total);
     selIds = selIds.filter((id) => P.some((p) => p.id === id));
-    btn("undo").disabled = !past.length;
+    btn("undo").disabled = !past.length && !justOpened;
     btn("redo").disabled = !future.length;
     btn("undo").title = past.length ? `Undo ${past[past.length - 1].label} (${kl("undo")})` : "Undo";
     btn("redo").title = future.length ? `Redo ${future[future.length - 1].label} (${kl("redo")})` : "Redo";
@@ -2082,7 +2090,7 @@ export function mount(root) {
       const pct = Math.floor(100 * (job.frac || 0));
       body = `<span class="pop-sub">${esc(job.name)} · ${job.mode === "instant" ? "Instant" : "Exact"}${job.est ? ` · ≈ ${fmtBytes(job.est)}` : ""}</span>
         <span class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></span>
-        <div class="row-between">${esc(job.stage || "Starting")}<span class="v">${pct}%${job.left != null ? ` · ${fmtSecs(job.left)} left` : ""}</span></div>
+        <div class="row-between">${esc(job.stage || "Starting")}<span class="v">${pct}%${job.left != null ? ` · ${fmtSecs(job.left)} left` : " · Estimating…"}</span></div>
         <button class="btn-2 big qv-cancel" type="button">Cancel</button>`;
     }
     // keep the focus (and caret) in a text field across the re-render
@@ -2401,7 +2409,7 @@ export function mount(root) {
     await me.out?.abort();
     try { await me.writable?.abort(); } catch {}
     await removeOut(me.handle);
-    if (me.jid && me.jid !== keepJob) jobs.remove(me.jid);
+    if (me.jid && me.jid !== keepJob) await jobs.remove(me.jid); // (before the list is read again: no "Unfinished" card for a job that failed)
     job = null;
     toast(`Couldn't export: ${err.message || err}`, { bad: true, ms: 6000 });
     renderExport();
@@ -2602,6 +2610,14 @@ export function mount(root) {
     if (!m || (k === "Enter" && e.target?.tagName === "BUTTON")) return;
     K.dispatch(e);
   });
+  // any other action (a key that is not Ctrl+Z, a press anywhere but on Undo, a wheel turn) ends "just opened"
+  addEventListener("keydown", (e) => {
+    if (!justOpened || /^(Control|Shift|Alt|Meta)$/.test(e.key)) return;
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === "KeyZ") return;
+    clearJustOpened();
+  }, true);
+  addEventListener("pointerdown", (e) => { if (justOpened && !e.target.closest?.('[data-a="undo"]')) clearJustOpened(); }, true);
+  addEventListener("wheel", () => clearJustOpened(), { capture: true, passive: true });
   // labels built by hand follow the user's keys
   const KACT = { undo: "undo", redo: "redo", crop: "crop", export: "export", play: "play", back1: "prevFrame", fwd1: "nextFrame", loop: "loop", mute: "mute", split: "split", delete: "delete", snap: "snap", zout: "zoomOut", zin: "zoomIn", fit: "zoomFit", keys: "keys" };
   for (const [a, id] of Object.entries(KACT)) for (const el of ed.querySelectorAll(`[data-a="${a}"]`)) { el.dataset.kact = id; for (const kb of el.querySelectorAll(".kbd")) kb.dataset.kact = id; }

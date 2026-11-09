@@ -37,6 +37,7 @@
 .cl .cl-zoomchip .cl-zp { min-width: 52px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--tx-1); font: 500 12px var(--mono); }
 .cl .cl-zoomchip .cl-zp:hover { background: var(--bg-3); }
 .cl .cl-zoomchip .btn-g.sm { color: var(--tx-1); }
+.cl .cl-zoomchip .cl-zsep { height: 16px; margin: 0 3px; }
 .cl .cl-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; outline: none; touch-action: none; }
 .cl .cl-canvas:focus-visible { box-shadow: 0 0 0 2px var(--acc-text); }
 .cl .cl-cur { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px rgba(0, 0, 0, 0.45); pointer-events: none; }

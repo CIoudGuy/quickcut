@@ -25,10 +25,13 @@
 .ph-text::selection { background: rgba(47, 111, 235, 0.35); }
 
 /* floating properties bar (top centre; between the tool strip and the Layers card on desktop) */
-.ph-props { position: absolute; z-index: 5; left: 60px; right: 274px; top: 12px; margin: 0 auto; width: max-content; max-width: calc(100% - 334px);
-  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 6px 8px; }
+.ph-props { position: absolute; z-index: 5; left: 60px; right: 336px; top: 12px; margin: 0 auto; width: max-content; max-width: calc(100% - 396px); /* clear of the tool strip and the Layers card */
+  padding: 6px 8px; }
+/* groups and their lines: .gbar (shared/ui.css); every control is one height */
 .ph-props .pp, .ph-tools .tt { display: contents; }
-.ph-props .grp { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; }
+.ph-props .grp.ph-sliders { column-gap: 14px; }
+.ph-props .seg > button { height: calc(var(--ctl) - 4px); }
+.ph-props .num { height: var(--ctl); }
 .ph-props .lbl { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; color: var(--tx-2); font-size: 12px; white-space: nowrap; }
 .ph-props .val { min-width: 34px; text-align: right; font: 400 12px var(--mono); color: var(--tx-1); }
 .ph-props .num { width: 76px; }
@@ -47,18 +50,21 @@
 .ph-swatch input { position: absolute; inset: -8px; width: 44px; height: 44px; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .ph-pick { display: inline-flex; align-items: center; gap: 8px; font: 400 12px var(--mono); }
 
-/* crop options bar: one compact row (design sizes); wraps only when truly too narrow, Cancel/Apply stay together */
-.ph-crop { gap: 4px; padding: 6px; }
-.ph-crop > .pp > .grp, .ph-crop .grp { gap: 4px; }
-.ph-crop .seg > button { padding: 0 7px; }
-.ph-crop .lbl { gap: 4px; }
-.ph-crop .lbl .num { width: 64px; padding: 0 6px; }
-.ph-crop .lbl .val { min-width: 34px; }
-.ph-crop .ph-straight .slider { width: 72px; }
+/* crop options bar: aspect chooser · rotate/flip/straighten · W×H unit + snap · Reset Cancel Apply */
+.ph-crop { padding: 6px; }
+.ph-crop .lbl { gap: 6px; }
+.ph-crop .lbl .val { min-width: 38px; }
 .ph-crop .btn-g, .ph-crop .btn-p { padding: 0 10px; }
-.ph-crop .grp:last-child { margin-left: auto; }
+.ph-aspect { min-width: 92px; justify-content: space-between; padding: 0 8px 0 12px; }
+.ph-aspect .v { font-variant-numeric: tabular-nums; }
+.ph-aspect svg { color: var(--tx-2); }
+.ph-wh { height: var(--ctl); display: inline-flex; align-items: center; gap: 2px; padding: 0 8px 0 10px; border-radius: var(--r-md); background: var(--bg-2); color: var(--tx-2); font-size: 12px; white-space: nowrap; }
+.ph-wh label { display: inline-flex; align-items: center; gap: 6px; cursor: text; }
+.ph-wh input { width: 5.4ch; padding: 0; border: 0; outline: none; background: transparent; color: var(--tx-1); font: 400 12px var(--mono); }
+.ph-wh .ib { width: 26px; height: 26px; margin: 0 2px; }
+.ph-wh .unit { margin-left: 2px; font: 400 12px var(--mono); }
+.ph-wh:focus-within { box-shadow: inset 0 0 0 1px var(--acc); }
 @container (max-width: 1399px) { .ph-crop .kbd { display: none; } }
-@container (max-width: 1099px) { .ph-crop .sep.desk-only { display: none; } }
 
 /* tool strip */
 .ph-tools { position: absolute; z-index: 5; left: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; padding: 4px; }
@@ -163,6 +169,7 @@ html.ly-dragging, html.ly-dragging * { cursor: grabbing !important; user-select:
     padding: 0 8px; border-radius: 0; box-shadow: none; border-top: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .ph-props::-webkit-scrollbar { display: none; }
   .ph-props .seg > button { height: 36px; padding: 0 12px; }
+  .ph-props .grp { flex-wrap: nowrap; max-width: none; }
   .ph-tools { left: 0; right: 0; top: auto; bottom: 0; transform: none; height: 64px; flex-direction: row; justify-content: space-around; align-items: center; padding: 0 4px calc(env(safe-area-inset-bottom)); border-radius: 0; box-shadow: none; border-top: 1px solid var(--border); }
   .ph-tools button { width: 44px; height: 44px; }
   .ph-layers, .ph-layers.open, .ph-layers-btn { display: none !important; }
