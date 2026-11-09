@@ -217,6 +217,13 @@ function handTo(tool, files) {
 }
 async function routeTo(tool, files) { await show(tool); await load(tool); handTo(tool, files); }
 addEventListener("dragover", (e) => { if (hasDropFiles(e)) e.preventDefault(); });
+// while files are dragged over the window, the open tool shows it's ready (shell.css: html.files-over)
+let fileDrag = 0;
+const filesOver = (on) => { if (!on) fileDrag = 0; document.documentElement.classList.toggle("files-over", on); };
+addEventListener("dragenter", (e) => { if (hasDropFiles(e)) { fileDrag++; filesOver(true); } });
+addEventListener("dragleave", (e) => { if (hasDropFiles(e) && --fileDrag <= 0) filesOver(false); });
+addEventListener("drop", () => filesOver(false));
+addEventListener("dragend", () => filesOver(false));
 addEventListener("drop", (e) => {
   if (routing || !hasDropFiles(e)) return;
   const files = [...e.dataTransfer.files];

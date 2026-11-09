@@ -2085,12 +2085,14 @@ export function mount(root) {
   const qualitySeg = () => {
     const cur = pickQuality();
     return `<div class="field-label"><span class="row-between">Quality<span class="v" data-v="est">${qualityNote(cur)}</span></span>
-      <div class="seg fill" role="radiogroup" aria-label="Quality">${QUALITIES.map(([id, n, t]) => { const no = whyNot(id); return `<button type="button" role="radio" data-q="${id}" aria-checked="${cur === id}" ${no ? `disabled title="${n}: ${esc(no)}"` : `title="${t}"`}>${n}</button>`; }).join("")}</div></div>`;
+      <div class="seg fill" role="radiogroup" aria-label="Quality">${QUALITIES.map(([id, n, t]) => { const no = whyNot(id); return `<button type="button" role="radio" data-q="${id}" aria-checked="${cur === id}" ${no ? `aria-disabled="true" data-no="${esc(no)}" title="${n}: ${esc(no)}"` : `title="${t}"`}>${n}</button>`; }).join("")}</div></div>`;
   };
   function bindQuality(el, onChange) {
     el.addEventListener("click", (e) => {
       const b = e.target.closest("[data-q]");
-      if (!b || b.disabled) return;
+      if (!b) return;
+      // a quality this device can't run: say why (a tooltip alone is easy to miss)
+      if (b.getAttribute("aria-disabled") === "true") { toast(b.dataset.no || "Not available here", { info: true, ms: 4000 }); return; }
       setQuality(b.dataset.q);
       for (const x of el.querySelectorAll("[data-q]")) x.setAttribute("aria-checked", String(x.dataset.q === rb.quality));
       const est = el.querySelector('[data-v="est"]');
@@ -2099,6 +2101,25 @@ export function mount(root) {
     });
   }
   const bgEp = () => { try { return new URLSearchParams(location.search).get("bgep") || localStorage.getItem("quickcut.photo.bgep") || "auto"; } catch { return "auto"; } };
+  /** Where the AI runs, as the user chose it (GPU by default; remembered). */
+  const epPref = () => { try { return localStorage.getItem("quickcut.photo.bgep") === "wasm" ? "wasm" : "auto"; } catch { return "auto"; } };
+  function setEp(ep) {
+    try { if (ep === "wasm") localStorage.setItem("quickcut.photo.bgep", "wasm"); else localStorage.removeItem("quickcut.photo.bgep"); } catch {}
+    if (!rb.job) { kill("bg"); rb.warm = null; } // the next run starts the AI where it was asked to
+  }
+  const epSeg = () => {
+    const cur = epPref(), noGpu = rb.st?.gpu && (!rb.st.gpu.webgpu || rb.st.gpu.fallback) ? "No GPU access in this browser" : "";
+    return `<div class="field-label ph-ep"><span class="row-between">Run on</span><div class="seg fill" role="radiogroup" aria-label="Run on">${[["auto", "GPU", noGpu], ["wasm", "CPU", ""]].map(([id, n, no]) => `<button type="button" role="radio" data-ep="${id}" aria-checked="${cur === id}" ${no ? `aria-disabled="true" data-no="${esc(no)}" title="${n}: ${esc(no)}"` : `title="${n}"`}>${n}</button>`).join("")}</div></div>`;
+  };
+  function bindEp(el) {
+    el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ep]");
+      if (!b) return;
+      if (b.getAttribute("aria-disabled") === "true") { toast(b.dataset.no, { info: true, ms: 4000 }); return; }
+      setEp(b.dataset.ep);
+      for (const x of el.querySelectorAll("[data-ep]")) x.setAttribute("aria-checked", String(x.dataset.ep === epPref()));
+    });
+  }
   const fmtMB = (b) => `${Math.round(b / 1e6)} MB`;
   async function bgStatus(model) { rb.st = await call("bg", { op: "status", model }); return rb.st; }
   /** Hovering a Remove background button starts the AI (if it was downloaded before), so the click is quick. */
@@ -2164,13 +2185,15 @@ export function mount(root) {
   }
   /** The arrow next to Remove background: pick the default AI model, remove downloaded ones. */
   async function openBgMenu(anchor) {
-    const el = h(`<section class="ph-pop ph-bgmenu" role="dialog" aria-label="AI model">${qualitySeg()}</section>`);
+    const el = h(`<section class="ph-pop ph-bgmenu" role="dialog" aria-label="AI model">${qualitySeg()}${epSeg()}</section>`);
     bindQuality(el);
+    bindEp(el);
     // open at once; sizes, availability and the downloaded models fill in when the worker answers
     if (openLayer(el, { anchor, width: 320, reopen: false }).toggledOff) return;
     try { await bgStatus(MODEL_OF[pickQuality()]); } catch {}
     if (!el.isConnected) return;
     el.querySelector(".field-label").outerHTML = qualitySeg();
+    el.querySelector(".ph-ep").outerHTML = epSeg();
     el.append(storedRows(el));
   }
   function askDownload(go) {
@@ -2301,6 +2324,10 @@ export function mount(root) {
       if (tool !== "mask") setTool("mask");
       const note = used.q !== quality ? ` (${QUALITIES.find((x) => x[0] === quality)[1]} didn't fit this device, so Fast was used)` : "";
       toast(`Background removed · ${(ms / 1000).toFixed(1)} s${note}`, { ms: 6000, action: "Undo", onAction: undo });
+      if (epPref() !== "wasm" && r.ep === "wasm" && rb.st?.gpu?.webgpu && !rb.cpuHinted) {
+        rb.cpuHinted = true;
+        setTimeout(() => toast("GPU failed · ran on CPU", { info: true, ms: 8000, action: "Always CPU", onAction: () => { setEp("wasm"); toast("AI runs on CPU", { info: true, ms: 2000 }); } }), 1200);
+      }
     } catch (e) {
       endBg();
       toast(`Couldn't remove the background: ${e.message}`, { bad: true });

@@ -17,7 +17,7 @@
 .ph-stage.c-text { cursor: text; }
 .ph-stage.c-grab, .ph-stage.c-grab * { cursor: grab !important; }
 .ph-stage.c-grabbing, .ph-stage.c-grabbing * { cursor: grabbing !important; }
-.ph.over .ph-stage::after { content: ""; position: absolute; inset: 6px; border: 2px dashed var(--acc); border-radius: var(--r-lg); pointer-events: none; z-index: 9; }
+/* drag-over feedback for files: shell.css (html.files-over), the same in every tool */
 
 .ph-chip { position: absolute; z-index: 2; height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: var(--r-sm); background: rgba(14, 14, 15, 0.88); color: #EDEDEF; font: 500 12px var(--mono); white-space: nowrap; pointer-events: none; transform: translateX(-50%); }
 

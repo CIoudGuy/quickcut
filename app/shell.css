@@ -34,3 +34,12 @@ body { display: flex; flex-direction: column; }
 .view { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg-0); }
 .view.boot::after { content: ""; position: absolute; left: 50%; top: 0; width: 40%; height: 2px; background: var(--acc); transform: translateX(-50%); animation: qc-boot 1.2s var(--ease) infinite; }
 @keyframes qc-boot { 0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .2; } }
+
+/* files dragged over the window: the open tool lights up, its Open box lifts and its icon bobs */
+html.files-over .view:not([hidden])::after { content: ""; position: absolute; inset: 8px; z-index: 50; border: 2px dashed var(--acc); border-radius: var(--r-lg); background: color-mix(in srgb, var(--acc) 6%, transparent); pointer-events: none; animation: qc-drop-in 160ms var(--ease); }
+html.files-over .view:not([hidden]) .drop { border-color: var(--acc); background: var(--bg-2); transform: scale(1.015); }
+html.files-over .view:not([hidden]) .drop .glyph { background: var(--acc); color: #fff; animation: qc-bob 900ms var(--ease) infinite; }
+.drop { transition: transform var(--t-quick) var(--ease), border-color var(--t-instant) var(--ease), background var(--t-instant) var(--ease); }
+@keyframes qc-drop-in { from { opacity: 0; transform: scale(0.99); } }
+@keyframes qc-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { html.files-over .view:not([hidden])::after, html.files-over .view:not([hidden]) .drop .glyph { animation: none; } html.files-over .view:not([hidden]) .drop { transform: none; } }

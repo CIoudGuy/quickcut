@@ -13,7 +13,7 @@ WebAssembly binary come from this site only (`../models/`, `../vendor/ort/`, see
 |---|---|---|---|
 | **Fast** | BiRefNet 512×512 (`birefnet-512`, file `birefnet-512-v2/`) | 194 MB | anything (WebGPU, else CPU) |
 | **High detail** | BiRefNet general 1024×1024 (`birefnet-1024`) | 210 MB, optional | WebGPU with 16-bit floats, ≥ 1 GB buffers, ≥ 8 GB RAM |
-| (proposed "Hair & fur") | BiRefNet-matting 1024×1024 (`birefnet-matting-1024`) | 208 MB, optional | as High detail |
+| **Hair & fur** | BiRefNet-matting 1024×1024 (`birefnet-matting-1024`) | 208 MB, optional | as High detail |
 
 Rule: permissive licence only (MIT / Apache-2.0 / BSD). Out: RMBG-1.4 (BRIA non-commercial),
 RMBG-2.0 (CC BY-NC 4.0), BEN2 full (commercial), the onnx-community ISNet export (AGPL).
@@ -152,3 +152,17 @@ Cache Storage never held a partial file, and a retry downloaded, verified and ra
   with less than ≈ 6 GB free, Windows pages GPU memory to system RAM (slower), and if the run fails
   the page falls back to Fast, then to the CPU: there is always a result.
 - Phones / ≤ 4 GB devices: only Fast; big photos (> 12 MP) skip the colour clean-up.
+
+## CPU: several threads, and why there is no "Lite" model (2026-11-09)
+
+- The page is served cross-origin isolated (COOP `same-origin` + COEP `credentialless`), so ONNX Runtime's
+  CPU path runs on up to 8 threads instead of 1. Measured on a 12 MP photo, Fast on the CPU: about 22 s
+  → 8 s (4 threads) for the model run, no change in quality. Safari ignores COEP `credentialless` and
+  keeps 1 thread. Users can choose where the AI runs (menu next to Remove background: GPU / CPU,
+  remembered); a GPU run that falls back to the CPU offers "Always CPU".
+- BiRefNet_lite (Swin-T, MIT), exported at 512×512 and prepared like the others (58 MB), was measured
+  as a "Lite" option for weak devices and **not added**: 3–3.5× faster on the CPU once loaded, but only
+  1.6–1.9× faster on a first click (model start dominates), and clearly worse cut-outs (edge MSE 215 vs
+  120 on the synthetic set, whole-subject losses such as a dark head on a dark background, holes in
+  solid areas 30× more often). Multi-threading gives most of its speed-up with no quality loss.
+
