@@ -198,6 +198,56 @@ addEventListener("quickcut:project", async (e) => {
   (await load(tool))?.openProject?.(file, handle);
 });
 
+// ── drops anywhere: every file goes to the tool it belongs to ─────────────────
+// Videos open in Video, images in Photo (or Color Picker when that's open), projects (.qcut) in the
+// tool that made them. A drop on the wrong tab, or outside a tool's own drop area (top bar, …),
+// switches tab and hands the files to that tool exactly like a drop on it; nothing ever makes the
+// browser navigate to the dropped file.
+const isVideoFile = (f) => /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name);
+const isImageFile = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif|svg)$/i.test(f.name);
+const hasDropFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+let routing = false;
+const dropZone = (tool) => views[tool].querySelector(".ph") || views[tool]; // where each tool listens for drops
+function handTo(tool, files) {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  const target = dropZone(tool);
+  routing = true;
+  try { target.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true })); } finally { routing = false; }
+}
+async function routeTo(tool, files) { await show(tool); await load(tool); handTo(tool, files); }
+addEventListener("dragover", (e) => { if (hasDropFiles(e)) e.preventDefault(); });
+addEventListener("drop", (e) => {
+  if (routing || !hasDropFiles(e)) return;
+  const files = [...e.dataTransfer.files];
+  if (!files.length) return;
+  const vids = files.filter(isVideoFile), imgs = files.filter(isImageFile), other = files.filter((f) => !isVideoFile(f) && !isImageFile(f));
+  const inActive = !!mounted[active] && dropZone(active).contains(e.target);
+  let tool, list;
+  if (vids.length) { tool = "video"; list = [...other, ...vids]; } // a project dropped with its video goes along
+  else if (imgs.length && !other.length) { tool = active === "color" ? "color" : "photo"; list = imgs; }
+  else if (other.length) {
+    // maybe a project: Photo and Video read them (and pass each other's on); elsewhere, find its tool here
+    if ((active === "photo" || active === "video") && inActive) return;
+    e.preventDefault(); e.stopPropagation();
+    (async () => {
+      try {
+        const q = await import("./shared/qcut.js");
+        for (const f of other) {
+          if (!(await q.sniff(f))) continue;
+          const t = (await q.read(f)).type;
+          if (t === "photo" || t === "video") { await routeTo(t, [f]); return; }
+        }
+        toast("Can't open that file", { bad: true });
+      } catch { toast("Can't open that file", { bad: true }); }
+    })();
+    return;
+  } else return;
+  if (tool === active && inActive) return; // the tool's own drop area takes it
+  e.preventDefault(); e.stopPropagation();
+  routeTo(tool, list);
+}, true);
+
 // ── service worker (a speed-up only: repeat visits and offline use; nothing depends on it) ──
 // Registered after the page has loaded and gone idle so it never competes with the first visit.
 // If a newer version takes over while the page is open, say so quietly; nothing reloads by itself.

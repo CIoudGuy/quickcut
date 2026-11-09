@@ -101,6 +101,7 @@ export function mount(root) {
     <button class="drop" type="button">
       <span class="glyph">${icon("image", 22)}</span>
       <span class="title">Open photo</span>
+      <span class="hint">JPG, PNG, WebP, AVIF, GIF, BMP, HEIC, QCUT</span>
     </button>
     <section class="recents" aria-label="Recent files" hidden><span class="label">Recent</span><div class="grid"></div></section>
     <a class="credit-phone" href="https://github.com/CIoudGuy/quickcut" target="_blank" rel="noopener">QuickCut is open source on GitHub</a>
@@ -3210,7 +3211,7 @@ export function mount(root) {
     explicitPick = id;
     invalidate();
     const y0 = e.clientY;
-    let started = false, line = null, drop = null, into = null, lpT = 0;
+    let started = false, drop = null, into = null, lpT = 0;
     if (e.pointerType !== "mouse") lpT = setTimeout(() => { // long press: the row's actions
       lpT = 0;
       if (started) return;
@@ -3218,46 +3219,120 @@ export function mount(root) {
       end();
       openRowMenu(row, mv);
     }, 480);
-    const rows = [...lyList.children], nodes = rows.map((r) => nodeOf(+r.dataset.id));
+    const rows = [...lyList.children].filter((r) => r.classList.contains("ly-row")), nodes = rows.map((r) => nodeOf(+r.dataset.id));
     const off = (n) => !n || n === mv || covers(mv, n); // the dragged node and what's inside it
     const depth = (r) => parseFloat(r.style.getPropertyValue("--ind")) / 12 || 0;
+    // While dragging, the row (with everything inside it) lifts and follows the pointer, the other rows
+    // slide apart to open a gap where it will land (indented to the level it will land at), and a
+    // group's row lights up when the drop goes inside it. Hit-testing uses the rows' positions from
+    // the start of the drag, so the sliding never feeds back into where the drop goes.
+    let ghost = null, slot = null, lastEv = null, scrollRaf = 0, grabDy = 0, cancelled = false, lay = null, shown = [];
+    const measure = () => {
+      const lr = lyList.getBoundingClientRect(), z = lr.width / lyList.offsetWidth || 1, st = lyList.scrollTop;
+      const tops = [], hts = [];
+      for (const r of rows) { const b = r.getBoundingClientRect(); tops.push((b.top - lr.top) / z + st); hts.push(b.height / z); }
+      const block = rows.map((r, i) => i).filter((i) => nodes[i] && off(nodes[i]));
+      const bTop = tops[block[0]], bEnd = tops[block.at(-1)] + hts[block.at(-1)];
+      const gap = rows.length > 1 ? Math.max(0, tops[1] - tops[0] - hts[0]) : 2;
+      const bH = bEnd - bTop + gap;
+      const others = rows.map((r, i) => i).filter((i) => !block.includes(i));
+      const vt = others.map((i) => tops[i] - (tops[i] > bTop ? bH : 0));
+      shown = others.map((i) => tops[i]); // where each other row is drawn right now
+      return { tops, hts, block, others, vt, bH, z, gap };
+    };
+    const onKey = (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cancelled = true; end(); } };
+    const start = (ev) => {
+      started = true;
+      lay = measure();
+      const rr = row.getBoundingClientRect(), z = lay.z;
+      grabDy = (ev.clientY - rr.top) / z;
+      ghost = h(`<div class="ly-ghost" aria-hidden="true"></div>`);
+      for (const i of lay.block) {
+        const c = rows[i].cloneNode(true), src = rows[i].querySelectorAll("canvas"), dst = c.querySelectorAll("canvas");
+        dst.forEach((d, k) => { try { d.getContext("2d").drawImage(src[k], 0, 0); } catch {} });
+        ghost.append(c);
+      }
+      ghost.style.width = `${rr.width / z}px`;
+      ghost.style.left = `${rr.left / z}px`;
+      document.body.append(ghost);
+      for (const i of lay.block) rows[i].classList.add("drag-src");
+      lyList.classList.add("dragging");
+      document.documentElement.classList.add("ly-dragging");
+      slot = h(`<span class="ly-slot" aria-hidden="true"></span>`);
+      lyList.append(slot);
+      addEventListener("keydown", onKey, true);
+      scrollRaf = requestAnimationFrame(autoScroll);
+    };
+    // near the list's top or bottom edge the list scrolls, faster the closer the pointer is
+    const autoScroll = () => {
+      scrollRaf = 0;
+      if (!started || !lastEv) return;
+      const lr = lyList.getBoundingClientRect(), edge = 28 * lay.z;
+      const dy = lastEv.clientY < lr.top + edge ? -(lr.top + edge - lastEv.clientY) : lastEv.clientY > lr.bottom - edge ? lastEv.clientY - (lr.bottom - edge) : 0;
+      if (dy) { const before = lyList.scrollTop; lyList.scrollTop += Math.max(-14, Math.min(14, dy / 2)); if (lyList.scrollTop !== before) place(lastEv); }
+      scrollRaf = requestAnimationFrame(autoScroll);
+    };
+    const place = (ev) => {
+      const { tops, hts, others, vt, bH, z } = lay;
+      const lr = lyList.getBoundingClientRect(), py = (ev.clientY - lr.top) / z + lyList.scrollTop;
+      ghost.style.top = `${ev.clientY / z - grabDy}px`;
+      into?.classList.remove("drop-in");
+      into = null;
+      // onto the middle of a group's row: into that group (at its top); no gap opens
+      // hit-testing follows the rows where the user sees them (they slide while dragging)
+      const hit = others.findIndex((i, k) => py >= shown[k] + hts[i] * 0.3 && py <= shown[k] + hts[i] * 0.7);
+      let s;
+      if (hit >= 0 && nodes[others[hit]]?.group && !off(nodes[others[hit]])) {
+        into = rows[others[hit]];
+        into.classList.add("drop-in");
+        drop = { parent: nodes[others[hit]].id, at: topOf(nodes[others[hit]]) };
+        s = -1;
+      } else {
+        s = others.filter((i, k) => shown[k] + hts[i] / 2 < py).length;
+        const upI = others[s - 1], dnI = others[s], up = nodes[upI], dn = nodes[dnI];
+        // between a deeper row (above) and a shallower one (below): the pointer's x picks the level
+        const deep = up && (dnI === undefined || depth(rows[upI]) > depth(rows[dnI])) && !(up.group && !collapsed.has(up.id)) && (ev.clientX - lr.left) / z > 24 + depth(rows[upI]) * 12;
+        if (deep) drop = { parent: up.parent ?? null, at: idx(layersOf(up)[0].id), ind: depth(rows[upI]) };
+        else if (dn) drop = { parent: dn.parent ?? null, at: topOf(dn), ind: depth(rows[dnI]) };
+        else drop = { parent: null, at: 0, ind: 0 };
+      }
+      // slide the other rows: the dragged rows' space closes, a gap opens at the drop (none when into a group)
+      others.forEach((i, k) => {
+        const shift = vt[k] - tops[i] + (s >= 0 && k >= s ? bH : 0);
+        rows[i].style.transform = shift ? `translateY(${shift}px)` : "";
+        shown[k] = tops[i] + shift;
+      });
+      if (s >= 0) {
+        const gapTop = s < others.length ? shown[s] - bH : others.length ? shown[others.length - 1] + hts[others.at(-1)] + lay.gap : 0;
+        slot.hidden = false;
+        slot.style.top = `${gapTop}px`;
+        slot.style.height = `${bH - lay.gap}px`;
+        slot.style.left = `${4 + (drop.ind || 0) * 12}px`;
+      } else slot.hidden = true;
+    };
     const move = (ev) => {
       if (!started && Math.abs(ev.clientY - y0) < 5) return;
       if (lpT) { clearTimeout(lpT); lpT = 0; }
-      if (!started) { started = true; row.classList.add("drag"); line = h(`<span class="ly-drop"></span>`); lyList.append(line); }
-      const rs = rows.map((r) => r.getBoundingClientRect()), lr = lyList.getBoundingClientRect(), z = lr.width / lyList.offsetWidth || 1;
-      into?.classList.remove("drop-in");
-      into = null;
-      // onto the middle of a group's row: into that group (at its top)
-      const hit = rs.findIndex((r) => ev.clientY >= r.top + r.height * 0.3 && ev.clientY <= r.bottom - r.height * 0.3);
-      if (hit >= 0 && nodes[hit]?.group && !off(nodes[hit])) {
-        into = rows[hit];
-        into.classList.add("drop-in");
-        line.hidden = true;
-        drop = { parent: nodes[hit].id, at: topOf(nodes[hit]) };
-        return;
-      }
-      line.hidden = false;
-      const s = rs.filter((r) => r.top + r.height / 2 < ev.clientY).length, up = nodes[s - 1], dn = nodes[s];
-      // between a deeper row (above) and a shallower one (below): the pointer's x picks the level
-      const deep = up && (!dn || depth(rows[s - 1]) > depth(rows[s])) && !(up.group && !collapsed.has(up.id)) && (ev.clientX - lr.left) / z > 24 + depth(rows[s - 1]) * 12;
-      if (deep) drop = { parent: up.parent ?? null, at: idx(layersOf(up)[0].id), ind: depth(rows[s - 1]) };
-      else if (dn) drop = { parent: dn.parent ?? null, at: topOf(dn), ind: depth(rows[s]) };
-      else drop = { parent: null, at: 0, ind: 0 };
-      const yy = s < rs.length ? rs[s].top - 1 : rs[rs.length - 1].bottom + 1;
-      line.style.top = `${(yy - lr.top) / z + lyList.scrollTop - 1}px`;
-      line.style.left = `${6 + drop.ind * 12}px`;
+      if (!started) start(ev);
+      lastEv = ev;
+      place(ev);
     };
     const end = () => {
       if (lpT) { clearTimeout(lpT); lpT = 0; }
       removeEventListener("pointermove", move);
       removeEventListener("pointerup", end);
       removeEventListener("pointercancel", end);
+      removeEventListener("keydown", onKey, true);
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
       if (!started) return;
-      line?.remove();
+      started = false;
+      ghost?.remove();
+      slot?.remove();
       into?.classList.remove("drop-in");
-      row.classList.remove("drag");
-      if (!drop || (drop.parent != null && (drop.parent === mv.id || inside(grp(drop.parent), mv.id)))) return;
+      for (const r of rows) { r.style.transform = ""; r.classList.remove("drag-src"); }
+      lyList.classList.remove("dragging");
+      document.documentElement.classList.remove("ly-dragging");
+      if (cancelled || !drop || (drop.parent != null && (drop.parent === mv.id || inside(grp(drop.parent), mv.id)))) return;
       const baseId = mv.clip ? baseOf(mv).id : null, n = doc.layers.length;
       record(drop.parent !== (mv.parent ?? null) ? (drop.parent == null ? "Move out of group" : "Move into group") : "Reorder layers", () => {
         moveNode(mv, drop.parent, drop.at);

@@ -105,8 +105,18 @@
 .ly-row.off .nm { color: var(--tx-3); }
 .ly-row.off .th, .ly-row.off .tg { opacity: 0.45; }
 .ly-row.off .eye { color: var(--tx-3); }
-.ly-row.drag { opacity: 0.6; }
-.ly-drop { position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 1px; background: var(--acc); pointer-events: none; }
+/* dragging a layer: it lifts and follows the pointer, the others slide apart to open a gap where it lands */
+.ly-row { cursor: grab; }
+.ly-row .eye, .ly-row .mk, .ly-row .bm { cursor: pointer; }
+.ly-list.dragging .ly-row { transition: transform 140ms var(--ease); }
+.ly-list.dragging .ly-row:hover { background: transparent; }
+.ly-row.drag-src { visibility: hidden; }
+.ly-slot { position: absolute; right: 4px; border-radius: var(--r-md); background: color-mix(in srgb, var(--acc) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 60%, transparent); pointer-events: none; transition: top 140ms var(--ease), left 140ms var(--ease); }
+.ly-ghost { position: fixed; z-index: 1000; pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 0; border-radius: var(--r-md); background: var(--bg-2); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--acc); transform: scale(1.02) rotate(-0.6deg); transform-origin: 30% 50%; opacity: 0.96; }
+.ly-ghost .ly-row { background: transparent; box-shadow: none; }
+.ly-ghost .ly-row.drag-src { visibility: visible; }
+html.ly-dragging, html.ly-dragging * { cursor: grabbing !important; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .ly-list.dragging .ly-row, .ly-slot { transition: none; } .ly-ghost { transform: none; } }
 .ly-foot { display: flex; justify-content: space-between; padding: 6px 8px 8px; margin-top: 4px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .ly-foot button { width: 28px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: var(--r-md); background: transparent; color: var(--tx-2); }
 .ly-foot button:hover:not(:disabled) { background: var(--bg-3); color: var(--tx-1); }
@@ -230,7 +240,7 @@
 .pop .ly-row .bm { height: 36px; max-width: 110px; padding: 0 10px; font-size: 13px; }
 .pop .ly-row .bm.def { box-shadow: inset 0 0 0 1px var(--border); }
 .pop .ly-row .nm { font-size: 14px; }
-.ly-row.drop-in { box-shadow: inset 0 0 0 2px var(--acc); }
+.ly-row.drop-in { background: color-mix(in srgb, var(--acc) 16%, transparent); box-shadow: inset 0 0 0 2px var(--acc); }
 .pop .ly-row .tw { width: 36px; height: 44px; }
 /* Move tool options (tool strip flyout) */
 .ph-menu.ph-moveopts { gap: 10px; padding: 12px !important; }

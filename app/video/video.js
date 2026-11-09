@@ -132,7 +132,7 @@ export function mount(root) {
     <button class="drop" type="button">
       <span class="glyph">${icon("film", 22)}</span>
       <span class="title">Open a video</span>
-      <span class="hint">MP4, MOV, WebM, MKV</span>
+      <span class="hint">MP4, MOV, M4V, WebM, MKV, QCUT</span>
     </button>
     <section class="recents" aria-label="Recent files" hidden><span class="label">Recent</span><div class="grid"></div></section>
     <a class="credit-phone" href="https://github.com/CIoudGuy/quickcut" target="_blank" rel="noopener">QuickCut is open source on GitHub</a>
@@ -267,12 +267,17 @@ export function mount(root) {
   // key index → ImageBitmap, least recently drawn first. Bounded: a 7-hour file has ~26 000 key
   // frames, and zooming, scrolling and speed changes keep asking for new ones (each 30–200 KB).
   const thumbs = new Map(), THUMB_MAX = 600;
+  let thumbKeys = null; // the cached key indices, sorted (rebuilt when the set changes)
   function addThumb(k, bmp) {
+    const old = thumbs.get(k);
+    if (old && old !== bmp) old.close?.();
     thumbs.delete(k);
     thumbs.set(k, bmp);
+    if (!old) thumbKeys = null;
     if (thumbs.size <= THUMB_MAX) return;
     const gone = [];
     for (const [k2, b2] of thumbs) { if (thumbs.size <= THUMB_MAX - 50) break; b2.close?.(); thumbs.delete(k2); gone.push(k2); }
+    thumbKeys = null;
     doc?.worker?.postMessage({ op: "thumbForget", list: gone });
     lastThumbAsk = "";
   }
@@ -280,8 +285,14 @@ export function mount(root) {
   function thumbFor(ki) {
     const b = thumbs.get(ki);
     if (b) { thumbs.delete(ki); thumbs.set(ki, b); return { b, exact: true }; }
-    for (let d = 1; d <= 48; d++) { const n = thumbs.get(ki - d) || thumbs.get(ki + d); if (n) return { b: n, exact: false }; }
-    return { b: null, exact: false };
+    // the nearest one however far: a tile never stays empty while any picture exists (a long file's
+    // pictures arrive one by one, and cuts at high speed ask for keys far from the ones decoded)
+    if (!thumbs.size) return { b: null, exact: false };
+    const ks = thumbKeys || (thumbKeys = [...thumbs.keys()].sort((a, c) => a - c));
+    let lo = 0, hi = ks.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ks[m] < ki) lo = m + 1; else hi = m; }
+    const n = lo > 0 && Math.abs(ks[lo - 1] - ki) <= Math.abs(ks[lo] - ki) ? ks[lo - 1] : ks[lo];
+    return { b: thumbs.get(n), exact: false };
   }
   let peaks = null, coarse = null, waveDone = false; // waveform: max |sample| per 10 ms and per second (waveDone: all of it is there)
   let lastThumbAsk = "";
@@ -291,11 +302,34 @@ export function mount(root) {
   const stats = (window.__qcVideo = { setPieces, thumbCount: () => thumbs.size, keys: () => doc?.keys?.length, mode: () => ({ stepMode, shuttle }), zoomInfo: () => ({ pps, fit: fitPps(), scrollX, guideT, padL: G.padL, zf, snapOn }), seeks: [], opens: [], state: () => ({ P: P.map((p) => [+p.start.toFixed(3), +p.end.toFixed(3), p.speed, p.volume]), sel: selIds.map((id) => P.findIndex((p) => p.id === id)), C, tl, total: L?.total, playing, job: job && { state: job.state, mode: job.mode, frac: job.frac, stage: job.stage, left: job.left, fps: job.fps }, lastDone: lastDone && { name: lastDone.name, bytes: lastDone.bytes, secs: lastDone.secs }, unfinished: () => unfinished.map((u) => ({ id: u.id, name: u.j.name, pct: jobPct(u.j) })) }) });
 
   // ── open a file ──────────────────────────────────────────────────────────
-  intake(root, (files) => openAny(files[0].file, files[0].handle), { isActive: () => active && !job, filter: (f) => isVideo(f) || maybeProject(f) });
+  intake(root, (files) => openDropped(files), { isActive: () => active && !job, filter: (f) => isVideo(f) || maybeProject(f) });
   /** A dropped / picked file: a project (.qcut) or a video. */
-  async function openAny(file, handle) {
-    if (maybeProject(file) && (await qcut.sniff(file))) openProject(file, { handle: null });
-    else openFile(file, handle);
+  async function openAny(file, handle) { return openDropped([{ file, handle }]); }
+  /**
+   * Dropped files: a project (with its video dropped alongside, if any), or a video. A video dropped
+   * while a project waits for its video links it (when it's the right one).
+   */
+  async function openDropped(items) {
+    let proj = null;
+    for (const it of items) if (maybeProject(it.file) && (await qcut.sniff(it.file))) { proj = it; break; }
+    const vids = items.filter((it) => isVideo(it.file));
+    if (proj) { openProject(proj.file, { handle: null, also: vids }); return; }
+    if (!vids[0]) return;
+    if (relinkWait && (await relinkWith(vids[0].file, vids[0].handle, true))) return;
+    relinkWait = null;
+    openFile(vids[0].file, vids[0].handle);
+  }
+  // a project opened without its video: the next dropped (or chosen) video that matches it is used
+  let relinkWait = null;
+  /** Use `file` for the waiting project; false when it isn't that project's video. */
+  async function relinkWith(file, handle, quiet = false) {
+    const w = relinkWait;
+    if (!w) return false;
+    if (!(await w.same(file))) { if (!quiet) toast(`That isn't ${w.name}`, { bad: true, ms: 5000 }); return false; }
+    if (relinkWait !== w) return false;
+    relinkWait = null;
+    w.finish(file, handle);
+    return true;
   }
   const openRecentProject = async (rec) => {
     const blob = await recents.project(rec.id);
@@ -356,7 +390,7 @@ export function mount(root) {
    * Open a project: read it, find its video (the handle / file `relink()` gives, else ask for it; checked by
    * size and fingerprint) and restore the edit onto it. A Photo project goes to Photo.
    */
-  async function openProject(blob, { handle = null, relink = null } = {}) {
+  async function openProject(blob, { handle = null, relink = null, also = [] } = {}) {
     if (job) { toast("Export running", { bad: true }); return; }
     let f, pd;
     try { f = await qcut.read(blob); } catch (e) { toast(qErr(e), { bad: true }); return; }
@@ -369,19 +403,22 @@ export function mount(root) {
     const src = pd?.source;
     if (!src || typeof src.name !== "string" || !num(src.size) || !pd.edit || !Array.isArray(pd.edit.pieces)) { toast(qErr(), { bad: true }); return; }
     const same = async (file) => !!file && file.size === src.size && (typeof src.hash === "string" && src.hash ? (await qcut.fingerprint(file)).hash === src.hash : file.name === src.name);
-    let file = null, hd = handle || undefined;
-    try { file = relink ? await relink() : null; } catch {}
-    if (!(await same(file))) {
-      toast(`Choose ${src.name} again`, { ms: 5000, info: true });
-      const got = await pickFiles({ accept: "video/*,.mkv,.mov", types: VIDEO_TYPES });
-      if (!got[0]) return;
-      if (!(await same(got[0].file))) { toast(`That isn't ${src.name}${src.size ? ` (${fmtBytes(src.size)})` : ""}`, { bad: true, ms: 5000 }); return; }
-      file = got[0].file; hd = got[0].handle;
-    }
     const e = pd.edit, v = pd.view && typeof pd.view === "object" ? pd.view : {};
     const pieces = e.pieces.filter((p) => p && num(p.start) && num(p.end));
     if (!pieces.length) { toast(qErr(), { bad: true }); return; }
-    openFile(file, hd, { P: pieces, sel: Array.isArray(e.sel) ? e.sel.filter(Number.isInteger) : [], C: okCrop(e.crop) ? e.crop : null, name: typeof e.name === "string" ? e.name.slice(0, 200) : "", tl: num(v.tl) ? v.tl : 0, zoom: num(v.zoom) ? v.zoom : undefined, scroll: num(v.scroll) ? v.scroll : undefined }, okCache(pd.cache));
+    const finish = (file, hd) => openFile(file, hd, { P: pieces, sel: Array.isArray(e.sel) ? e.sel.filter(Number.isInteger) : [], C: okCrop(e.crop) ? e.crop : null, name: typeof e.name === "string" ? e.name.slice(0, 200) : "", tl: num(v.tl) ? v.tl : 0, zoom: num(v.zoom) ? v.zoom : undefined, scroll: num(v.scroll) ? v.scroll : undefined }, okCache(pd.cache));
+    // its video: the remembered one, one dropped with it, or the video that is open right now
+    let file = null, hd = handle || undefined;
+    try { file = relink ? await relink() : null; } catch {}
+    if (!(await same(file))) {
+      file = null;
+      for (const c of [...also, doc && { file: doc.file, handle: doc.handle }].filter(Boolean)) if (await same(c.file)) { file = c.file; hd = c.handle; break; }
+    }
+    if (file) { relinkWait = null; finish(file, hd); return; }
+    // not here: drop it anywhere on the editor, or choose it
+    relinkWait = { name: src.name, same, finish };
+    const choose = async () => { const got = await pickFiles({ accept: "video/*,.mkv,.mov", types: VIDEO_TYPES }); if (got[0]) relinkWith(got[0].file, got[0].handle); };
+    toast(`Drop or choose ${src.name}`, { info: true, ms: 15000, action: "Choose", onAction: choose });
   }
   /** The project of the open video. `sprite`: the thumbnails as one picture (or null). */
   function projectDoc(d, sprite) {
@@ -439,7 +476,8 @@ export function mount(root) {
     } catch (e) { console.error(e); toast("Can't save project", { bad: true }); }
   }
   // (tests) the project as saved now, and opening one
-  Object.assign(stats, { projectBlob: async (mode = "best") => { await doc.fpP; return qcut.write({ type: "video", doc: projectDoc(doc, await thumbSprite(doc)), preview: previewOf(doc.thumb) }, { mode }); }, openProject: (b, o) => openProject(b, o), openFile: (f, h, rs, c) => openFile(f, h, rs, c), get doc() { return doc; }, peaksDone: () => !!peaks && waveDone });
+  Object.assign(stats, { projectBlob: async (mode = "best") => { await doc.fpP; return qcut.write({ type: "video", doc: projectDoc(doc, await thumbSprite(doc)), preview: previewOf(doc.thumb) }, { mode }); }, openProject: (b, o) => openProject(b, o), openFile: (f, h, rs, c) => openFile(f, h, rs, c), peaksDone: () => !!peaks && waveDone });
+  Object.defineProperty(stats, "doc", { get: () => doc, configurable: true }); // (tests) a live view, not a copy
 
   async function openFile(file, handle, restoreState, cache = null) {
     if (job) { toast("Export running", { bad: true }); return; }
@@ -552,7 +590,7 @@ export function mount(root) {
     if (doc) { doc.worker?.terminate(); URL.revokeObjectURL(doc.url); }
     fbVideo?.remove(); fbVideo = null;
     for (const b of thumbs.values()) b.close?.();
-    thumbs.clear(); peaks = coarse = null; waveDone = false; lastThumbAsk = ""; spriteMemo = null;
+    thumbs.clear(); thumbKeys = null; peaks = coarse = null; waveDone = false; lastThumbAsk = ""; spriteMemo = null;
     for (const v of V) { v.removeAttribute("src"); v.load(); }
     doc = null;
   }
@@ -1026,6 +1064,7 @@ export function mount(root) {
     g.setTransform(dpr * zf, 0, 0, dpr * zf, 0, 0);
     g.clearRect(0, 0, W, H);
     const { pieceTop: pt, pieceH: ph, thumbH, hw, tileW } = G;
+    stats.tiles = 0; stats.tilesEmpty = 0;
     // ruler
     const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 900, 1800, 3600, 7200, 14400];
     const step = steps.find((s) => s * pps >= (s >= 3600 ? 96 : 80)) || 14400;
@@ -1122,7 +1161,8 @@ export function mount(root) {
         g.save(); rr(tx, pt + 2, tw, th, 2); g.clip();
         g.drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, tx, pt + 2, tw, th);
         g.restore();
-      } else { g.fillStyle = col["bg-2"]; rr(tx, pt + 2, tw, th, 2); g.fill(); }
+      } else { g.fillStyle = col["bg-2"]; rr(tx, pt + 2, tw, th, 2); g.fill(); stats.tilesEmpty++; }
+      stats.tiles++;
     }
     // waveform
     g.fillStyle = col["bg-1"];
@@ -1209,6 +1249,31 @@ export function mount(root) {
     return best;
   }
 
+  // middle button: drag the timeline sideways at any zoom (no playhead move, no selection, no browser auto-scroll)
+  let midPan = null; // {id, x0, s0}
+  const midEnd = (e) => {
+    if (!midPan || (e && e.pointerId !== midPan.id)) return;
+    try { track.releasePointerCapture(midPan.id); } catch {}
+    midPan = null; track.style.cursor = "";
+  };
+  track.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
+  track.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
+  track.addEventListener("pointerdown", (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    if (!doc || !L || midPan || gesture) return;
+    try { track.setPointerCapture(e.pointerId); } catch {}
+    hideHover();
+    midPan = { id: e.pointerId, x0: local(e).x, s0: scrollX };
+    track.style.cursor = "grabbing";
+  });
+  track.addEventListener("pointermove", (e) => {
+    if (!midPan || e.pointerId !== midPan.id) return;
+    scrollX = midPan.s0 - (local(e).x - midPan.x0); clampScroll(); draw();
+  });
+  track.addEventListener("pointerup", midEnd);
+  track.addEventListener("pointercancel", midEnd);
+  track.addEventListener("lostpointercapture", midEnd);
   track.addEventListener("pointerdown", (e) => {
     if (!doc || !L || e.button > 0) return;
     if (track.clientWidth !== W || track.clientHeight !== H) measure();
@@ -1245,7 +1310,7 @@ export function mount(root) {
     scrubTo(pt.x, false, e);
   });
   track.addEventListener("pointermove", (e) => {
-    if (!doc || !L) return;
+    if (!doc || !L || midPan) return;
     const pt = local(e);
     if (!pointers.has(e.pointerId)) {
       if (e.pointerType === "mouse") showHover(pt);

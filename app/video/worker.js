@@ -128,7 +128,7 @@ async function pumpThumbs() {
       await d.flush();
       const f = lastThumb;
       lastThumb = null;
-      if (!f) continue;
+      if (!f) { thumbDone.delete(k); continue; } // no picture came out: a later ask tries it again
       const bmp = await smallBitmap(f, tr.rotation, thumbH);
       f.close();
       post({ op: "thumb", k, bmp }, [bmp]);

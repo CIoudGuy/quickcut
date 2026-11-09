@@ -45,6 +45,7 @@ export function mount(root) {
       <button class="drop cl-drop" type="button">
         <span class="glyph">${icon("eyedrop", 22)}</span>
         <span class="title">Open images</span>
+        <span class="hint">JPG, PNG, WebP, AVIF, GIF, BMP, ICO</span>
       </button>
       <section class="recents" aria-label="Recent images" hidden><span class="label">Recent</span><div class="grid"></div></section>
       <div class="cl-oldcloud" hidden><button class="btn-g sm cl-oldbtn" type="button" aria-haspopup="dialog">Old cloud colors</button></div>
