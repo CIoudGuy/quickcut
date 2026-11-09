@@ -2068,13 +2068,16 @@ export function mount(root) {
   // phones and low-memory devices: no high-detail pass and no big model (they hold several big buffers at once)
   const lowMem = (navigator.deviceMemory && navigator.deviceMemory <= 4) || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   // Fast: BiRefNet 512 + full-resolution edge refinement. High detail: BiRefNet 1024, a bigger model
-  // (own download, no tiling). Hair & fur: BiRefNet matting 1024 (own download). See BG_REMOVER.md.
+  // (own download, no tiling). Hair & fur: BiRefNet matting 1024. People: BiRefNet portrait 1024.
+  // Fine detail: BiRefNet DIS 1024 (trees, bikes, fences). Each its own download. See BG_REMOVER.md.
   const QUALITIES = [
     ["fast", "Fast", "Fast"],
     ["hq", "High detail", "High detail"],
     ["soft", "Hair & fur", "Hair & fur"],
+    ["people", "People", "People"],
+    ["fine", "Fine detail", "Fine detail"],
   ];
-  const MODEL_OF = { fast: "birefnet-512", hq: "birefnet-1024", soft: "birefnet-matting-1024" };
+  const MODEL_OF = { fast: "birefnet-512", hq: "birefnet-1024", soft: "birefnet-matting-1024", people: "birefnet-portrait-1024", fine: "birefnet-dis-1024" };
   rb.quality = "fast"; rb.speed = {};
   try { rb.quality = localStorage.getItem("quickcut.photo.bgq") || ""; rb.speed = JSON.parse(localStorage.getItem("quickcut.photo.bgspeed") || "{}"); } catch {}
   /** Why a quality can't run here ("" when it can), from feature detection of the GPU. */
@@ -2096,15 +2099,19 @@ export function mount(root) {
     const s0 = (v.base + (v.perMP * l.canvas.width * l.canvas.height) / 1e6) / 1000;
     return `≈ ${s0 < 1 ? "1" : Math.round(s0)} s here`;
   }
-  function qualityNote(qv) {
+  // (the download size is on each quality's row, so only the time estimate goes here)
+  const qualityNote = (qv) => bgEstimate(qv);
+  /** A quality's size in the picker: what a first use downloads (with the download icon), else the model's size. */
+  function qualitySize(qv) {
     const m = rb.st?.models?.[MODEL_OF[qv]];
-    const dl = m ? (m.bytes ? `${fmtMB(m.bytes)} download` : "downloaded") : "";
-    return [dl, bgEstimate(qv)].filter(Boolean).join(" · ");
+    if (!m) return "";
+    return m.bytes ? `${icon("download", 12)}${fmtMB(m.bytes)}` : fmtMB(m.size);
   }
+  // a list (five qualities don't fit one row of a 300 px popup): name left, size right
   const qualitySeg = () => {
     const cur = pickQuality();
-    return `<div class="field-label"><span class="row-between">Quality<span class="v" data-v="est">${qualityNote(cur)}</span></span>
-      <div class="seg fill" role="radiogroup" aria-label="Quality">${QUALITIES.map(([id, n, t]) => { const no = whyNot(id); return `<button type="button" role="radio" data-q="${id}" aria-checked="${cur === id}" ${no ? `aria-disabled="true" data-no="${esc(no)}" title="${n}: ${esc(no)}"` : `title="${t}"`}>${n}</button>`; }).join("")}</div></div>`;
+    return `<div class="field-label ph-q"><span class="row-between">Quality<span class="v" data-v="est">${qualityNote(cur)}</span></span>
+      <div class="ph-qlist" role="radiogroup" aria-label="Quality">${QUALITIES.map(([id, n, t]) => { const no = whyNot(id); return `<button type="button" role="radio" data-q="${id}" aria-checked="${cur === id}" ${no ? `aria-disabled="true" data-no="${esc(no)}" title="${n}: ${esc(no)}"` : `title="${t}"`}><span class="n">${n}</span><span class="sz">${qualitySize(id)}</span></button>`; }).join("")}</div></div>`;
   };
   function bindQuality(el, onChange) {
     el.addEventListener("click", (e) => {
@@ -2138,8 +2145,8 @@ export function mount(root) {
       setEp(b.dataset.ep);
       for (const x of el.querySelectorAll("[data-ep]")) x.setAttribute("aria-checked", String(x.dataset.ep === epPref()));
       // the qualities this choice allows (High detail / Hair & fur need the GPU)
-      const qs = el.querySelector(".field-label:not(.ph-ep)");
-      if (qs?.querySelector("[data-q]")) qs.outerHTML = qualitySeg();
+      const qs = el.querySelector(".ph-q");
+      if (qs) qs.outerHTML = qualitySeg();
     });
   }
   const fmtMB = (b) => `${Math.round(b / 1e6)} MB`;
@@ -2214,7 +2221,7 @@ export function mount(root) {
     if (openLayer(el, { anchor, width: 320, reopen: false }).toggledOff) return;
     try { await bgStatus(MODEL_OF[pickQuality()]); } catch {}
     if (!el.isConnected) return;
-    el.querySelector(".field-label").outerHTML = qualitySeg();
+    el.querySelector(".ph-q").outerHTML = qualitySeg();
     el.querySelector(".ph-ep").outerHTML = epSeg();
     el.append(storedRows(el));
   }

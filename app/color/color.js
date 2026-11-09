@@ -473,12 +473,20 @@ export function mount(root) {
     chip.hidden = curEl.hidden = true;
     pos = null;
   }
-  /** a subtle pixel grid from 800%: only the lines in the visible part of the image */
+  /**
+   * Zoomed in (pixels shown as blocks): the visible part of the image is drawn here, one block per
+   * image pixel, with the same numbers as the grid and as picking. The browser's own scaling of the
+   * image (a GPU layer) enlarges a copy made at the fitted size, so its blocks are not the image's
+   * pixels and could not line up with the grid. From 800% a subtle grid is drawn on top.
+   */
   let gridOn = false;
   function drawGrid() {
     if (!cur || !active) return;
-    const v = cur.view, cell = fitScale() * v.z;
-    if (cell < GRID_FROM) { if (gridOn) { gridCv.width = gridCv.height = 0; gridOn = false; } return; }
+    const v = cur.view, cell = fitScale() * v.z, cellY = (v.h / cur.h) * v.z;
+    const pixels = cell >= 2;
+    const vis = pixels ? "hidden" : ""; // the browser's scaled copy steps aside while ours shows
+    if (cur.canvas.style.visibility !== vis) cur.canvas.style.visibility = vis;
+    if (!pixels) { if (gridOn) { gridCv.width = gridCv.height = 0; gridOn = false; } return; }
     const sw = stage.clientWidth, sh = stage.clientHeight, r = stage.getBoundingClientRect();
     const dpr = devicePixelRatio || 1, kx = (r.width * dpr) / sw || 1;
     const dw = Math.max(1, Math.round(r.width * dpr)), dh = Math.max(1, Math.round(r.height * dpr));
@@ -488,20 +496,26 @@ export function mount(root) {
     const ctx = gridCv.getContext("2d");
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, dw, dh);
-    const L = v.x + v.tx, T = v.y + v.ty, R = L + cur.w * cell, B = T + cur.h * cell;
+    const L = v.x + v.tx, T = v.y + v.ty, R = L + cur.w * cell, B = T + cur.h * cellY;
     const x0 = Math.max(0, L), x1 = Math.min(sw, R), y0 = Math.max(0, T), y1 = Math.min(sh, B);
     if (x1 <= x0 || y1 <= y0) return;
     const i0 = Math.max(0, Math.floor((x0 - L) / cell)), i1 = Math.min(cur.w, Math.ceil((x1 - L) / cell));
-    const j0 = Math.max(0, Math.floor((y0 - T) / cell)), j1 = Math.min(cur.h, Math.ceil((y1 - T) / cell));
+    const j0 = Math.max(0, Math.floor((y0 - T) / cellY)), j1 = Math.min(cur.h, Math.ceil((y1 - T) / cellY));
+    // the pixels: block edges on the same rounded device pixels as the grid lines
+    const X = (i) => Math.round((L + i * cell) * kx), Y = (j) => Math.round((T + j * cellY) * kx);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cur.canvas, i0, j0, i1 - i0, j1 - j0, X(i0), Y(j0), X(i1) - X(i0), Y(j1) - Y(j0));
+    if (cell < GRID_FROM) return;
     ctx.globalAlpha = Math.min(1, (cell - GRID_FROM) / 8 + 0.4);
     ctx.lineWidth = 1;
     for (const [col, off] of [["rgba(0,0,0,0.22)", 0], ["rgba(255,255,255,0.14)", 1]]) {
       ctx.strokeStyle = col;
       ctx.beginPath();
-      for (let i = i0; i <= i1; i++) { const X = Math.round((L + i * cell) * kx) + off + 0.5; if (X < x0 * kx - 2 || X > x1 * kx + 2) continue; ctx.moveTo(X, y0 * kx); ctx.lineTo(X, y1 * kx); }
-      for (let j = j0; j <= j1; j++) { const Y = Math.round((T + j * cell) * kx) + off + 0.5; if (Y < y0 * kx - 2 || Y > y1 * kx + 2) continue; ctx.moveTo(x0 * kx, Y); ctx.lineTo(x1 * kx, Y); }
+      for (let i = i0; i <= i1; i++) { const x = X(i) + off + 0.5; if (x < x0 * kx - 2 || x > x1 * kx + 2) continue; ctx.moveTo(x, y0 * kx); ctx.lineTo(x, y1 * kx); }
+      for (let j = j0; j <= j1; j++) { const y = Y(j) + off + 0.5; if (y < y0 * kx - 2 || y > y1 * kx + 2) continue; ctx.moveTo(x0 * kx, y); ctx.lineTo(x1 * kx, y); }
       ctx.stroke();
     }
+    ctx.globalAlpha = 1;
   }
   /** the hex chip next to the pointer (above the finger on touch); a ring marks the pixel for keys and touch */
   function drawChip() {
@@ -1154,6 +1168,15 @@ export function mount(root) {
   refreshRecents();
   renderResume(resumeBox, "color", (rec) => restore(rec.state));
 
+  // test hooks (the _test pages): open images, set the zoom, read where an image pixel is drawn
+  root._qc = {
+    addFiles: (files) => addFiles(files.map((file) => ({ file }))),
+    zoomAbs: (abs, px, py) => { if (!cur) return; stopZoomAnim(); const a = imgPt({ x: px, y: py }); zoomAt(abs / fitScale(), a.x, a.y); },
+    centreOf: (px, py) => imgPt({ x: px, y: py }),
+    pixelAt: (cx, cy) => pixelAt(cx, cy),
+    drawNow: () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } drawGrid(); },
+    get grid() { return gridCv; }, get stage() { return stage; },
+  };
   return {
     show() { active = true; if (!cur) { refreshRecents(); renderResume(resumeBox, "color", (rec) => restore(rec.state)); } else layout(); },
     hide() { active = false; hideChip(); stopZoomAnim(); },

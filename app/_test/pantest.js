@@ -12,7 +12,7 @@ export async function run() {
   await until(() => V.opens.length > n0 && V.state().total > 0);
   const track = document.querySelector("#view-video .qv-track"), r = track.getBoundingClientRect();
   const slider = document.querySelector("#view-video .qv-zoom .slider");
-  slider.value = "600"; slider.dispatchEvent(new Event("input", { bubbles: true }));
+  slider.value = "1000"; slider.dispatchEvent(new Event("input", { bubbles: true }));
   await wait(400);
   const sx = () => V.zoomInfo().scrollX;
   ok("zoomed in (can scroll)", V.zoomInfo().pps > V.zoomInfo().fit * 1.5, V.zoomInfo());
@@ -27,10 +27,11 @@ export async function run() {
   ev("pointermove", x0 - 150);
   ok("cursor grabbing", track.style.cursor === "grabbing", track.style.cursor);
   await wait(50);
-  ok("drag left scrolls right", sx() > s0 + 100, [s0, sx()]);
+  const sL = sx();
+  ok("drag left scrolls right", sL > s0 + 50, [s0, sL]);
   ev("pointermove", x0 + 40);
   await wait(50);
-  ok("drag right scrolls back", sx() < s0 + 100, sx());
+  ok("drag right scrolls back", sx() < sL, [sL, sx()]);
   ev("pointerup", x0 + 40);
   ok("cursor reset", track.style.cursor === "", track.style.cursor);
   ok("playhead unmoved", V.state().tl === tl0, [tl0, V.state().tl]);

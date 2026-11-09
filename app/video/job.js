@@ -367,9 +367,9 @@ export function runExact(o) {
         if (bytes <= s.fit.target) break;
         // the last round hardly moved the size: the encoder is at its floor for this picture, more
         // rounds only burn minutes (4 rounds of a 5K AV1 export ended 5 MB over)
-        if (prevBytes != null && prevBytes - bytes < 0.2 * (prevBytes - s.fit.target * 0.985)) throw new Error(`The encoder can't get below ${fmtMB(bytes)} here. Choose a larger size.`);
+        if (prevBytes != null && prevBytes - bytes < 0.2 * (prevBytes - s.fit.target * 0.985)) throw floorErr(`The encoder can't get below ${fmtMB(bytes)} here. Choose a larger size.`, bytes);
         prevBytes = bytes;
-        if (F.round >= 4) throw new Error(`The result is still ${fmtMB(bytes)}, over ${fmtMB(s.fit.target)}. Try a larger size.`);
+        if (F.round >= 4) throw floorErr(`The result is still ${fmtMB(bytes)}, over ${fmtMB(s.fit.target)}. Try a larger size.`, bytes);
         const redo = redoParts(F, J.done, bytes - s.fit.target * 0.985, F.round);
         F.round++;
         const list = Object.keys(redo).map(Number).sort((a, b) => a - b);
@@ -406,4 +406,6 @@ export function runExact(o) {
   promise.catch(() => {}).finally(() => { clearInterval(tickTimer); for (const w of [...live]) kill(w); });
   return { promise, cancel };
 }
+/** The size target can't be reached at this output size (the page may try a smaller one). */
+const floorErr = (msg, bytes) => Object.assign(new Error(msg), { floor: bytes });
 const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${(b / 1e6).toFixed(1)} MB`);

@@ -262,3 +262,10 @@ html.ly-dragging, html.ly-dragging * { cursor: grabbing !important; user-select:
 .ph-split > .ph-caret { width: 26px; padding: 0; justify-content: center; margin-left: 1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .ph-bgmenu { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
 .ph-bgmenu .ph-stored { padding-top: 10px; }
+/* AI quality picker: one row per model, name left, size right */
+.ph-qlist { display: flex; flex-direction: column; gap: 2px; padding: 2px; border-radius: var(--r-md); background: var(--bg-3); }
+.ph-qlist > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: calc(var(--seg-h) + 4px); padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--tx-2); font: 500 12px/1 var(--font); text-align: left; cursor: pointer; transition: background var(--t-instant) var(--ease), color var(--t-instant) var(--ease); }
+.ph-qlist > button:hover { color: var(--tx-1); }
+.ph-qlist > button[aria-checked="true"] { background: var(--bg-1); color: var(--tx-1); }
+.ph-qlist > button[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+.ph-qlist .sz { display: inline-flex; align-items: center; gap: 4px; color: var(--tx-2); font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }

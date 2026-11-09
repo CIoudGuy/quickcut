@@ -24,7 +24,7 @@
 .qv-crop .ed { position: absolute; }
 .qv-cropbar { position: absolute; z-index: 2; left: 50%; top: 12px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 48px); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 6px 8px; }
 @media (max-width: 599px) {
-  .qv-cropbar { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; max-width: none; height: 52px; flex-wrap: nowrap; justify-content: flex-start; padding: 0 8px; border-radius: 0; box-shadow: none; overflow-x: auto; white-space: nowrap; }
+  .qv-cropbar { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; max-width: none; min-height: 52px; justify-content: flex-start; padding: 4px 8px; border-radius: 0; box-shadow: none; }
 }
 
 /* transport */
@@ -63,8 +63,8 @@
 .qv-piecepanel.dk-wide .qv-sv { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
 .qv-piecepanel.dk-wide .qv-sec { flex: 1 1 220px; max-width: 360px; }
 .dk-sheet .qv-sv { padding: 4px 0 8px; }
-.qv-tlbar { height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 12px; overflow: hidden; }
-.qv-tlbar .sep { margin: 0 4px; }
+.qv-tlbar { min-height: 44px; flex-shrink: 0; padding: 4px 12px; }
+.qv-tlbar.gbar, .qv-cropbar.gbar { overflow: visible; }
 /* the marked range: a chip with its times and a clear button */
 .qv-track { position: relative; flex: 1; min-height: 140px; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; }
 .qv-track canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
@@ -83,7 +83,7 @@
   .qv-tl { flex: 1; min-height: 0; }
   .qv-work { flex: none; min-height: 0; }
   .qv-tlpanel.dk-phone-docked { flex: 1 1 auto !important; }
-  .qv-tlbar { height: 52px; padding: 0 8px; }
+  .qv-tlbar { min-height: 52px; padding: 4px 8px; }
   .qv-track { flex: 1; height: auto; min-height: 210px; }
   .qv-sv .qv-speed .seg { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .qv-sv .qv-speed .seg > button { height: 40px; }
@@ -120,12 +120,12 @@
 @media (max-width: 599px) { .qv-speed .num { width: 76px; height: 40px; } }
 .qv-exp .qv-pct { font: 500 11px var(--mono); padding: 0 5px; border-radius: var(--r-sm); background: var(--kbd-on); }
 /* phones: keep every row inside the screen width */
-.qv, .qv-ed, .qv-trans, .qv-tlbar { min-width: 0; overflow: hidden; }
+.qv, .qv-ed, .qv-trans, .qv-tlbar { min-width: 0; }
+.qv, .qv-ed, .qv-trans { overflow: hidden; }
 @media (max-width: 599px) {
   .qv-trans .ib:not(.qv-play) { width: 36px; }
   .qv-play { width: 48px; }
   .qv-time { font-size: 11px; margin-left: 2px; }
-  .qv-tlbar { overflow-x: auto; scrollbar-width: none; }
   .qv-tlbar .kbd { display: none; }
   .qv-tlbar .btn-g { padding: 0 8px; }
 }
@@ -139,7 +139,7 @@
 .qv-warn svg { color: var(--trim); flex-shrink: 0; }
 /* phones: the timeline bar is Split · Delete · Speed & vol · Fit (as designed); the magnet would
    push Fit off screen. Snapping stays on (crop has its own magnet). */
-@media (max-width: 599px) { .qv-tlbar .qv-snap { display: none; } }
+@media (max-width: 599px) { .qv-tlbar .grp:has(> .qv-snap) { display: none; } .qv-tlbar .grp:last-child { margin-left: auto; } }
 /* Exact · File size */
 .qv-tgt { grid-template-columns: repeat(2, 108px); grid-auto-flow: row; }
 .qv-sizes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 2px; border-radius: var(--r-md); background: var(--bg-3); }

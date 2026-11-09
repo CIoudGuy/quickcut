@@ -32,6 +32,15 @@ export const E_FLOOR = 0.9e6;
 export const E_CAP = 16e6;
 export function tier(E) { return E >= E_EXCELLENT ? "Excellent" : E >= E_GOOD ? "Good" : E >= E_FAIR ? "Fair" : "Low"; }
 
+/**
+ * Bits per pixel per frame below which an encoder stops following the requested rate (it hits its
+ * finest quantizer): a 5120x1440 AV1 export asked for 0.005 came out at 0.0065 whatever the request,
+ * 5 MB over the size target (a 2560x720 60 fps one, at 0.010, too). Scaled by the codec's efficiency (AV1 0.0075),
+ * x1.6 above 40 fps.
+ */
+export const BPP_AV1 = 0.0075;
+export const bppMin = (v) => (BPP_AV1 * (EFF[v] || 1)) / EFF.av1;
+
 /** Output sizes and frame rates to choose from, best first (score: pixels, then frame rate). */
 export function ladder(cw, ch, srcFps) {
   const short = Math.min(cw, ch);
@@ -123,15 +132,27 @@ export function planFit(o) {
     vbps = Math.min(vbps, 400e6);
     const E = equiv(vbps, pick.v, c.w, c.h, c.fps);
     const bytes = ((vbps + abps) * o.dur) / 8 + over;
-    return { ok: true, w: c.w, h: c.h, fps: c.fps, half: c.half, v: pick.v, hw: pick.hw, container, vbps: Math.round(vbps), audio, over, E, tier: tier(E / k), bytes, capped, cap };
+    const bpp = vbps / (c.w * c.h * c.fps);
+    return { ok: true, bpp, w: c.w, h: c.h, fps: c.fps, half: c.half, v: pick.v, hw: pick.hw, container, vbps: Math.round(vbps), audio, over, E, tier: tier(E / k), bytes, capped, cap };
   };
-  for (const c of cands) {
-    const p = evalAt(c);
+  // o.stepDown: rungs further down than the plan would pick (the first pass showed the encoder can't reach the size there)
+  let first = -1;
+  for (let i = 0; i < cands.length; i++) {
+    const p = evalAt(cands[i]);
     if (p === "pending") return { ok: false, pending: true };
     if (!p) continue;
     last = p;
-    if (p.E >= thr || p.capped) return p;
+    if ((p.E >= thr || p.capped) && p.bpp >= bppMin(p.v) * (p.fps > 40 ? 1.6 : 1) * (o.bppScale ?? 1)) { first = i; break; } // (bppScale: tests)
   }
+  if (first >= 0 && o.stepDown > 0) {
+    for (let i = Math.min(cands.length - 1, first + o.stepDown); i > first; i--) {
+      const p = evalAt(cands[i]);
+      if (p === "pending") return { ok: false, pending: true };
+      if (p && p.bpp >= 0) return { ...p, step: i - first };
+    }
+    return { ok: false, floor: true }; // already at the smallest size
+  }
+  if (first >= 0) return last;
   if (pending && !last) return { ok: false, pending: true };
   if (!last) return { ok: false, none: true };
   if (last.E >= floor && last.vbps > 30e3) return last;

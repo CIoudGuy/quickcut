@@ -65,8 +65,10 @@ export async function run() {
     answers = [1.5 * TARGET, 1.45 * TARGET, 1.44 * TARGET, 1.44 * TARGET, 1.44 * TARGET, 1.44 * TARGET];
     bc.onmessage = (e) => { if (e.data.mux) { if (e.data.dry) dry++; bc.postMessage({ bytes: answers[Math.min(calls++, answers.length - 1)] }); } };
     const { run } = make();
-    const r = await Promise.race([run.promise.then(() => "resolved", (e) => String(e.message)), wait(40000).then(() => "timeout")]);
+    const re = await Promise.race([run.promise.then(() => "resolved", (e) => e), wait(40000).then(() => "timeout")]);
+    const r = String(re?.message ?? re);
     ok("stuck size: short error", /can't get below/.test(r), r);
+    ok("stuck size: flagged so the page can step the size down", re?.floor > 0, re?.floor);
     ok("stuck size: gives up after 2 rounds", dry <= 3, dry);
     answers = [1.5 * TARGET, 1.2 * TARGET, 0.9 * TARGET];
     bc.onmessage = (e) => { if (e.data.mux) { const b = e.data.dry ? answers[Math.min(calls++, answers.length - 1)] : answers[answers.length - 1]; bc.postMessage({ bytes: b }); } };

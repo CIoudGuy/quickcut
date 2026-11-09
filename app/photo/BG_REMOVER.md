@@ -14,6 +14,13 @@ WebAssembly binary come from this site only (`../models/`, `../vendor/ort/`, see
 | **Fast** | BiRefNet 512×512 (`birefnet-512`, file `birefnet-512-v2/`) | 194 MB | anything (WebGPU, else CPU) |
 | **High detail** | BiRefNet general 1024×1024 (`birefnet-1024`) | 210 MB, optional | WebGPU with 16-bit floats, ≥ 1 GB buffers, ≥ 8 GB RAM |
 | **Hair & fur** | BiRefNet-matting 1024×1024 (`birefnet-matting-1024`) | 208 MB, optional | as High detail |
+| **People** | BiRefNet-portrait 1024×1024 (`birefnet-portrait-1024`), trained on people only | 208 MB, optional | as High detail |
+| **Fine detail** | BiRefNet-DIS 1024×1024 (`birefnet-dis-1024`), trained on DIS5K (trees, bikes, chairs, fences) | 208 MB, optional | as High detail |
+
+The picker (AI model menu, download prompt, Edge popup) is a list: one row per quality, its size
+on the right (with a download icon while it still has to be downloaded). Names: "People" says what
+it is for; "Fine detail" over "Objects" because every quality cuts out objects, while this one is
+for subjects made of thin parts.
 
 Rule: permissive licence only (MIT / Apache-2.0 / BSD). Out: RMBG-1.4 (BRIA non-commercial),
 RMBG-2.0 (CC BY-NC 4.0), BEN2 full (commercial), the onnx-community ISNet export (AGPL).
@@ -96,6 +103,51 @@ closer to Picsart):
 - Fusing 1024 and matting (offline test: matting result, made solid inside the 1024 model's core)
   only gave a compromise (MSE 13–17, Picsart rainbow glove 17–22) for two downloads; dropped.
 
+### People and Fine detail (added 2026-11-09, measured the same day)
+
+All five qualities run through the real worker (`bg.js`, with refinement) in headless Chrome on the
+RTX 5080. Metrics as above (MSE / edge MSE / grad ×1e3, boundary F, holes %). Test sets were made by
+a script and deleted afterwards:
+- **People** (20): 16 PPM-100 photos with their mattes (portraits, hair, full body; resized to
+  2400 px) + 4 group composites (2–3 PPM people on blurred or lightly blurred street/office scenes).
+  Note: Hair & fur was trained on PPM-100, so its people numbers are flattering.
+- **Fine detail** (22): 18 DIS5K **validation** images (bikes, fences, gate, chairs, handrails,
+  ladder, scaffold, swing, cable; not trained on by either model; the DIS **test** images are in
+  High detail's training set, so they were not used) + 4 synthetic trees (recursive branches with
+  exact soft alpha over street scenes).
+- **Owner's pictures** (8, copies): the three gloves, two eyes, two skeleton figures and a bottle,
+  against Picsart's cut-outs (a reference, not ground truth).
+
+| | People MSE · edge · BF | Fine (DIS-VD) MSE · edge · BF | Trees MSE · edge · BF | Owner vs Picsart SAD · IoU |
+|---|---|---|---|---|
+| Fast | 1.30 · 18.9 · 0.862 | 43.4 · 129 · 0.634 (all 22) | | 106 · 0.826 |
+| **High detail** | 0.96 · 14.5 · 0.903 | **18.8 · 85.6 · 0.835** | 92.8 · 97.4 · 0.678 | 73 · **0.897** |
+| Hair & fur | **0.90 · 13.6 · 0.905** | 40.3 · 168 · 0.570 (all 22) | | 134 · 0.792 |
+| **People** | 1.39 · 14.2 · 0.900 | 82.3 · 262 · 0.406 (all 22) | | 110 · 0.775 |
+| **Fine detail** | 12.2 · 34.8 · 0.770 | 29.0 · 99.5 · 0.816 | **51.8 · 65.0 · 0.803** | **58 · 0.878** |
+
+- **People vs High detail on people:** about equal. On the 16 photos: MSE 1.06 vs 1.02, edge MSE
+  13.9 vs 15.0, boundary F 0.888 vs 0.889. Better on full-body shots (e.g. edge 30.8 vs 43.6, 24.3
+  vs 31.4), worse on close-up portraits (MSE 1.2–2.0 vs 0.8–1.3) and on one group, where it kept
+  part of the blurred background (MSE 8.0 vs 0.5). No clear gain.
+- **Fine detail vs High detail:** worse on real thin objects (DIS validation: MSE 29.0 vs 18.8, edge
+  99.5 vs 85.6, IoU 0.80 vs 0.85), better on the synthetic trees (MSE 51.8 vs 92.8, boundary F 0.80
+  vs 0.68). On the owner's pictures it is the closest to Picsart on the bottle and both eyes (2.4 vs 20.2,
+  73 and 69 vs 195 and 305), about equal on the other gloves, but fails badly on the rainbow glove (280 vs 11: the smoke swirl and
+  half the glove dropped).
+- Speed and GPU memory at 12 MP: all 1024 models alike (table below).
+- Stability: 3 of 10 headless Fine detail sessions (22–46 photos in a row) ended with the test
+  browser closing; 0 of 9 for the other models. Not reproduced with Chrome logging on (3 clean runs
+  in a row), so the cause is open. A single removal never failed.
+
+| 12 MP, RTX 5080 | first run (model cached) | warm | GPU memory at peak |
+|---|---|---|---|
+| Fast | 3.5 s (+5.8 s start) | 1.1 s | ≈ +2.2 GB |
+| High detail | 3.7 s (+4.4 s start) | 1.6 s | ≈ +6.8 GB |
+| Hair & fur | 3.9 s (+4.2 s start) | 1.7 s | ≈ +7.3 GB |
+| People | 3.9 s (+4.5 s start) | 1.7 s | ≈ +7.5 GB |
+| Fine detail | 3.7 s (+4.2 s start) | 1.6 s | ≈ +7.4 GB |
+
 ### Refinement (unchanged)
 
 The model's mask is refined at **full resolution**: colour **guided filter** in the uncertain band
@@ -147,7 +199,7 @@ Cache Storage never held a partial file, and a retry downloaded, verified and ra
 ## Devices and fallbacks (feature detection only)
 
 - WebGPU adapter requested with `powerPreference: "high-performance"` and handed to ONNX Runtime.
-- High detail (and matting) need WebGPU with `shader-f16`, ≥ 1 GB buffers and ≥ 8 GB of device
+- High detail, Hair & fur, People and Fine detail need WebGPU with `shader-f16`, ≥ 1 GB buffers and ≥ 8 GB of device
   memory (`status.models[id].unfit` gives the reason). Browsers can't report GPU memory; on a GPU
   with less than ≈ 6 GB free, Windows pages GPU memory to system RAM (slower), and if the run fails
   the page falls back to Fast, then to the CPU: there is always a result.

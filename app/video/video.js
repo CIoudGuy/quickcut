@@ -12,7 +12,7 @@
 //   (WebCodecs re-encode).
 import {
   icon, h, $, esc, isPhone, isTouch, fmtBytes, fmtTime, baseName, openLayer, closeLayer, topLayer, toast,
-  pickFiles, intake, recents, renderRecents, thumbOf, download, mod, session, renderResume, syncSlider, resetSlider, makeMovable, doneCard, fmtAgo,
+  pickFiles, intake, recents, renderRecents, thumbOf, download, mod, session, renderResume, syncSlider, resetSlider, makeMovable, groupBar, doneCard, fmtAgo,
   recentId,
 } from "../shared/ui.js";
 import * as qcut from "../shared/qcut.js";
@@ -172,19 +172,24 @@ export function mount(root) {
     </div></div></div>
     <div class="qv-tlrow"><section class="qv-tl" aria-label="Timeline">
       <div class="qv-tlbar" role="toolbar" aria-label="Timeline actions">
-        <button class="btn-g" data-a="split" title="Split (${kl("split")})">${icon("razor")}Split<span class="kbd">${kl("split")}</span></button>
-        <button class="btn-g" data-a="delete" title="Delete (${kl("delete")})">${icon("trash")}Delete<span class="kbd">${kl("delete")}</span></button>
-        <span class="sep phone-only"></span>
-        <button class="btn-g phone-only qv-svb" data-a="svSheet" aria-haspopup="dialog">${icon(SPEED_ICON, 14)}Speed &amp; vol</button>
-        <span class="spacer"></span>
-        <button class="ib qv-snap" data-a="snap" aria-pressed="true" aria-label="Snap (${kl("snap")})" title="Snap (${kl("snap")})">${icon(MAGNET)}</button>
-        <span class="sep desk-only qv-zsep"></span>
-        <span class="qv-zoom desk-only" style="display:inline-flex;align-items:center;gap:4px">
-          <button class="ib" data-a="zout" aria-label="Zoom out (${kl("zoomOut")})" title="Zoom out (${kl("zoomOut")})">${icon("minus", 14)}</button>
-          <input class="slider neutral" type="range" min="0" max="1000" value="0" data-default="0" aria-label="Timeline zoom">
-          <button class="ib" data-a="zin" aria-label="Zoom in (${kl("zoomIn")})" title="Zoom in (${kl("zoomIn")})">${icon("plus", 14)}</button>
+        <span class="grp">
+          <button class="btn-g" data-a="split" title="Split (${kl("split")})">${icon("razor")}Split<span class="kbd">${kl("split")}</span></button>
+          <button class="btn-g" data-a="delete" title="Delete (${kl("delete")})">${icon("trash")}Delete<span class="kbd">${kl("delete")}</span></button>
         </span>
-        <button class="btn-2 qv-fit" data-a="fit" title="Fit (${kl("zoomFit")})">${icon("fit", 14)}<span class="desk-only">Fit</span></button>
+        <span class="grp phone-only">
+          <button class="btn-g qv-svb" data-a="svSheet" aria-haspopup="dialog">${icon(SPEED_ICON, 14)}Speed &amp; vol</button>
+        </span>
+        <span class="grp end">
+          <button class="ib qv-snap" data-a="snap" aria-pressed="true" aria-label="Snap (${kl("snap")})" title="Snap (${kl("snap")})">${icon(MAGNET)}</button>
+        </span>
+        <span class="grp">
+          <span class="qv-zoom desk-only" style="display:inline-flex;align-items:center;gap:4px">
+            <button class="ib" data-a="zout" aria-label="Zoom out (${kl("zoomOut")})" title="Zoom out (${kl("zoomOut")})">${icon("minus", 14)}</button>
+            <input class="slider neutral" type="range" min="0" max="1000" value="0" data-default="0" aria-label="Timeline zoom">
+            <button class="ib" data-a="zin" aria-label="Zoom in (${kl("zoomIn")})" title="Zoom in (${kl("zoomIn")})">${icon("plus", 14)}</button>
+          </span>
+          <button class="btn-2 qv-fit" data-a="fit" title="Fit (${kl("zoomFit")})">${icon("fit", 14)}<span class="desk-only">Fit</span></button>
+        </span>
       </div>
       <div class="qv-track" data-wheel-zoom>
         <canvas></canvas>
@@ -196,6 +201,7 @@ export function mount(root) {
   root.append(empty, ed);
 
   const q = (s) => $(s, ed);
+  groupBar(q(".qv-tlbar"));
   const stage = q(".qv-stage"), box = q(".qv-box"), V = [q("video.a"), q("video.b")];
   const chip = q(".qv-chip"), busyEl = q(".qv-busy");
   const timeEl = q(".qv-time"), playBtn = q(".qv-play"), loopBtn = q(".qv-loop");
@@ -1627,17 +1633,20 @@ export function mount(root) {
     for (const b of ed.querySelectorAll(".qv-pc")) b.hidden = false;
     if (isPhone()) { cropBtn.hidden = true; expBtn.hidden = true; }
     cropBar = h(`<div class="qv-cropbar float" role="toolbar" aria-label="Crop options">
-      <span class="seg" role="radiogroup" aria-label="Aspect ratio">${ASPECTS.map((a) => `<button type="button" role="radio" data-asp="${a}">${a}</button>`).join("")}</span>
-      <span class="sep"></span>
-      <button class="ib" data-c="rot" aria-label="Rotate 90°" title="Rotate 90°">${icon("rotate")}</button>
-      <button class="ib" data-c="fh" aria-label="Flip horizontal" title="Flip horizontal">${icon("flipH")}</button>
-      <button class="ib" data-c="fv" aria-label="Flip vertical" title="Flip vertical">${icon("flipV")}</button>
-      <button class="btn-g qv-creset" data-c="reset">Reset</button>
-      <span class="sep"></span>
-      <button class="ib qv-snap" data-c="snap" aria-pressed="${snapOn}" aria-label="Snap (N)" title="Snap (${kl("snap")})">${icon(MAGNET)}</button>
-      <span class="sep desk-only"></span>
-      <button class="btn-g desk-only" data-c="cancel">Cancel<span class="kbd">Esc</span></button>
-      <button class="btn-p desk-only" data-c="apply">Apply<span class="kbd">↵</span></button>
+      <span class="grp"><span class="seg" role="radiogroup" aria-label="Aspect ratio">${ASPECTS.map((a) => `<button type="button" role="radio" data-asp="${a}">${a}</button>`).join("")}</span></span>
+      <span class="grp">
+        <button class="ib" data-c="rot" aria-label="Rotate 90°" title="Rotate 90°">${icon("rotate")}</button>
+        <button class="ib" data-c="fh" aria-label="Flip horizontal" title="Flip horizontal">${icon("flipH")}</button>
+        <button class="ib" data-c="fv" aria-label="Flip vertical" title="Flip vertical">${icon("flipV")}</button>
+        <button class="btn-g qv-creset" data-c="reset">Reset</button>
+      </span>
+      <span class="grp">
+        <button class="ib qv-snap" data-c="snap" aria-pressed="${snapOn}" aria-label="Snap (N)" title="Snap (${kl("snap")})">${icon(MAGNET)}</button>
+      </span>
+      <span class="grp end desk-only">
+        <button class="btn-g" data-c="cancel">Cancel<span class="kbd">Esc</span></button>
+        <button class="btn-p" data-c="apply">Apply<span class="kbd">↵</span></button>
+      </span>
     </div>`);
     cropBar.onclick = (e) => {
       const b = e.target.closest("button");
@@ -1658,6 +1667,7 @@ export function mount(root) {
     </div>`);
     stage.append(cropEl, cropBar);
     makeMovable(cropBar, "video.crop");
+    groupBar(cropBar);
     cropEl.addEventListener("pointerdown", cropDown);
     layoutStage();
   }
@@ -1909,7 +1919,7 @@ export function mount(root) {
   }
   const audioTrack = () => (doc?.info && doc.info.audio >= 0 ? doc.info.tracks[doc.info.audio] : null);
   /** The plan for the current edit and size (see fit.js planFit), or {ok: false, pending}. */
-  function fitPlanNow() {
+  function fitPlanNow(step = 0) {
     const f = lastForm, at = audioTrack();
     if (at && !acaps) { probeAudioCaps(); return { ok: false, pending: true }; }
     const c = cropPx(), dur = editDur(), fps = doc.fps || 30;
@@ -1934,7 +1944,7 @@ export function mount(root) {
     if (content === undefined) return { ok: false, pending: true, probing: true };
     return planFit({
       content,
-      target: f.fitT, dur, cw: c.w, ch: c.h, fps, frames: dur * fps, container: fx ? fx.c : null, codecs: fx ? [fx.v] : AUTO_ORDER, codecAt: fitCodecAt, audioMin: 24e3, srcE, eLadder: window.__qcFitE || 0, // (tests: another ladder threshold)
+      target: f.fitT, dur, cw: c.w, ch: c.h, fps, frames: dur * fps, container: fx ? fx.c : null, codecs: fx ? [fx.v] : AUTO_ORDER, codecAt: fitCodecAt, audioMin: 24e3, srcE, eLadder: window.__qcFitE || 0, stepDown: step, bppScale: window.__qcBppScale, // (tests: another ladder threshold)
       audio: (total, container) => (src ? audioChoice(audioWant(total), src, container, plain, acaps.aac, acaps.opus) : null),
     });
   }
@@ -2253,20 +2263,25 @@ export function mount(root) {
     return support.get(k) === true;
   }
 
-  async function startExport() {
+  async function startExport(opts = {}) {
     if (job || !doc) return;
+    const step = opts.step || 0;
     const f = lastForm;
     const off = instantOff();
     const mode = f.mode === "instant" && !off ? "instant" : "exact";
-    const fp = mode === "exact" && f.size ? fitPlanNow() : null;
+    let fp = mode === "exact" && f.size ? fitPlanNow(step) : null;
+    // a step down needs the new size checked against the encoders first: wait for it
+    for (let n = 0; step && fp && fp.pending && n < 60; n++) { await new Promise((r) => setTimeout(r, 500)); fp = fitPlanNow(step); }
+    if (fp && !fp.ok && fp.floor) { toast(opts.err || "Choose a larger size.", { bad: true, ms: 6000 }); if (opts.tgt) removeOut(opts.tgt.handle); renderExport(); updateExpBtn(); refreshJobs(); return; }
     if (fp && !fp.ok) { toast(fp.pending ? "Still checking what this browser can encode. Try again in a moment." : fp.minBytes ? `${sizeLbl(f.fitT)} is too small for this edit. About ${sizeLbl(fp.minBytes)} is the smallest that works.` : "This browser can't encode video here. Pick another format.", { bad: true }); return; }
     const fmt = mode === "exact" ? (fp ? { c: fp.container, v: fp.v } : formatOf(f)) : null;
     if (fmt && !fp && support.get(supKey(fmt.v)) === false) { toast(`${fmt.label} isn't supported by this browser/GPU. Pick another format.`, { bad: true }); return; }
     const ext = mode === "instant" ? (doc.info?.container === "mov" ? ".mov" : ".mp4") : EXT[fmt.c];
     const name0 = `${(f.name || "export").trim().replace(/[\\/:*?"<>|]+/g, "_").replace(/\.(mp4|mov|webm|mkv)$/i, "") || "export"}${ext}`;
     const mime = MIME[mode === "instant" ? (ext === ".mov" ? "mov" : "mp4") : fmt.c];
-    const tgt = await saveTarget(name0, mime, ext);
+    const tgt = opts.tgt || await saveTarget(name0, mime, ext);
     if (!tgt || !doc) return;
+    if (step && fp) toast(`${fp.w} × ${fp.h}`, { info: true, ms: 4000 });
     if (mode === "instant") return instantExport(tgt, mime);
     await jobs.cleanup({ all: true }); // a new export replaces any unfinished one
     const ex = exactNumbers(f);
@@ -2283,7 +2298,7 @@ export function mount(root) {
       afit: !fp.audio ? null : fp.audio.copy ? { copy: true } : { codec: fp.audio.codec, bitrate: fp.audio.bitrate, channels: fp.audio.channels, frameMs: fp.audio.frameMs || 20 },
     } : {};
     const J = {
-      v: 1, id: jobs.newId(), created: Date.now(), state: "running", name: tgt.name,
+      v: 1, id: jobs.newId(), created: Date.now(), state: "running", name: tgt.name, step,
       src: { name: doc.file.name, size: doc.file.size, lastModified: doc.file.lastModified },
       C, s: {
         pieces: P.map((p) => ({ start: p.start, end: p.end, speed: p.speed, volume: p.volume })), A: c.A, crop: c.crop, outW: ex.r.w, outH: ex.r.h,
@@ -2365,8 +2380,24 @@ export function mount(root) {
       } catch (err) { fail(me, err); }
     }, (err) => {
       if (job !== me || /cancelled/.test(err?.message)) return;
+      if (err?.floor && J.s.fit && (J.step || 0) < 4) { retryLower(me, J, t, err); return; }
       fail(me, err, { keepJob: /storage is full/i.test(err?.message || "") ? J.id : null });
     });
+  }
+
+  /** The size can't be reached at this output size: the same export one size down (never asks for a new file). */
+  async function retryLower(me, J, t, err) {
+    me.cancelJob?.();
+    await me.out?.abort();
+    try { await me.writable?.abort(); } catch {}
+    await jobs.remove(J.id);
+    let t2 = { handle: null, writable: null, name: t.name };
+    try {
+      if (t.temp) { await removeOut(t.handle); t2 = { ...(await tempTarget(EXT[J.s.container])), name: t.name }; }
+      else if (t.handle) t2 = { handle: t.handle, writable: await t.handle.createWritable(), name: t.name };
+    } catch {}
+    job = null;
+    await startExport({ step: (J.step || 0) + 1, tgt: t2, err: err.message });
   }
 
   /** The export is done: close the popover, show the corner card. */
