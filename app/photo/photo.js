@@ -2068,15 +2068,14 @@ export function mount(root) {
   // phones and low-memory devices: no high-detail pass and no big model (they hold several big buffers at once)
   const lowMem = (navigator.deviceMemory && navigator.deviceMemory <= 4) || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   // Fast: BiRefNet 512 + full-resolution edge refinement. High detail: BiRefNet 1024, a bigger model
-  // (own download, no tiling). Hair & fur: BiRefNet matting 1024.
-  // Fine detail: BiRefNet DIS 1024 (trees, bikes, fences). Each its own download. See BG_REMOVER.md.
+  // (own download, no tiling). Hair & fur: BiRefNet matting 1024 (own download). See BG_REMOVER.md
+  // (People and Fine detail were tried and taken out: no better than High detail).
   const QUALITIES = [
     ["fast", "Fast", "Fast"],
     ["hq", "High detail", "High detail"],
     ["soft", "Hair & fur", "Hair & fur"],
-    ["fine", "Fine detail", "Fine detail"],
   ];
-  const MODEL_OF = { fast: "birefnet-512", hq: "birefnet-1024", soft: "birefnet-matting-1024", fine: "birefnet-dis-1024" };
+  const MODEL_OF = { fast: "birefnet-512", hq: "birefnet-1024", soft: "birefnet-matting-1024" };
   rb.quality = "fast"; rb.speed = {};
   try { rb.quality = localStorage.getItem("quickcut.photo.bgq") || ""; rb.speed = JSON.parse(localStorage.getItem("quickcut.photo.bgspeed") || "{}"); } catch {}
   /** Why a quality can't run here ("" when it can), from feature detection of the GPU. */

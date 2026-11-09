@@ -62,23 +62,6 @@
     "birefnet-matting-1024/model_q4.onnx.008",
     "birefnet-matting-1024/model_q4.onnx.009"
    ]
-  },
-  "birefnet-dis-1024": {
-   "file": "birefnet-dis-1024/model_q4.onnx",
-   "size": 208445998,
-   "sha256": "7f0d187c29f346a799047f98c9d4a5abf80903ad8551011ec7c4f1cef3980479",
-   "parts": [
-    "birefnet-dis-1024/model_q4.onnx.000",
-    "birefnet-dis-1024/model_q4.onnx.001",
-    "birefnet-dis-1024/model_q4.onnx.002",
-    "birefnet-dis-1024/model_q4.onnx.003",
-    "birefnet-dis-1024/model_q4.onnx.004",
-    "birefnet-dis-1024/model_q4.onnx.005",
-    "birefnet-dis-1024/model_q4.onnx.006",
-    "birefnet-dis-1024/model_q4.onnx.007",
-    "birefnet-dis-1024/model_q4.onnx.008",
-    "birefnet-dis-1024/model_q4.onnx.009"
-   ]
   }
  },
  "models": {
@@ -99,14 +82,6 @@
   "birefnet-matting-1024": {
    "file": "birefnet-matting-1024",
    "name": "BiRefNet matting 1024 (4-bit)",
-   "license": "MIT",
-   "input": 1024,
-   "gpu": true,
-   "tiles": false
-  },
-  "birefnet-dis-1024": {
-   "file": "birefnet-dis-1024",
-   "name": "BiRefNet DIS 1024 (4-bit)",
    "license": "MIT",
    "input": 1024,
    "gpu": true,

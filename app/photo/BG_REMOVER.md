@@ -224,3 +224,8 @@ and worse on everything else, so it only added a choice and a download. Its prep
 bucket (`birefnet-portrait-1024/`); the page's housekeeping deletes copies already downloaded, since the
 manifest no longer lists them.
 
+**Fine detail removed (2026-11-09):** BiRefNet-DIS ("Fine detail") was also taken out. Its only win was
+on 4 synthetic trees; on real thin objects it was worse than High detail (MSE 29.0 vs 18.8), on the owner's
+real tree photo it cut the lower trunk where High detail kept the whole tree, and it was the only model
+that crashed the test browser in batch runs. Its parts stay in the bucket (`birefnet-dis-1024/`).
+

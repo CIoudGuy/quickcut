@@ -16,9 +16,8 @@ Upstream (all permissively licensed):
     (huggingface.co/onnx-community/BiRefNet-ONNX), fp16: "High detail".
   * BiRefNet-matting 1024×1024 (MIT), ONNX export from the BiRefNet v1 release (fp32): soft alpha
     for hair, fur and glass.
-  * BiRefNet-DIS 1024×1024 (MIT), ONNX export from the same v1 release (fp32): "Fine detail"
-    (DIS5K: trees, bikes, fences). (BiRefNet-portrait was measured as "People" and left out:
-    no better than High detail on people, see ../photo/BG_REMOVER.md.)
+  (BiRefNet-portrait "People" and BiRefNet-DIS "Fine detail" were measured and left out: no better
+  than High detail, see ../photo/BG_REMOVER.md.)
   * ONNX Runtime Web 1.31.1 WebAssembly binary (MIT, github.com/microsoft/onnxruntime).
 
 Preparation of the model (deterministic):
@@ -78,18 +77,6 @@ SOURCES = {
         "sum_to_add": True,
         "prepared_sha256": "235d5b2f45b96848d350d63168f4efe23f7b6668cc853e200f84fdd5b66356f0",
     },
-    # BiRefNet-DIS 1024×1024 (MIT; trained on DIS5K: very detailed objects such as trees, bikes,
-    # chairs, fences), BiRefNet v1 release, fp32 (973 MB) → fp16 → 4-bit: "Fine detail".
-    # MIT also on huggingface.co/ZhengPeng7/BiRefNet-DIS5K @ 343602b.
-    "birefnet-dis-1024": {
-        "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-DIS-epoch_590.onnx",
-        "sha256": "6470117bac6f8d82a3f62921056f52d0f5c4d36d1d832096331d5ea38a03acb5",
-        "out": "birefnet-dis-1024/model_q4.onnx",
-        "prepare": True,
-        "fp16": True,
-        "sum_to_add": True,
-        "prepared_sha256": "7f0d187c29f346a799047f98c9d4a5abf80903ad8551011ec7c4f1cef3980479",
-    },
 }
 MODELS = {
     "birefnet-512": {"file": "birefnet-512", "name": "BiRefNet 512 (4-bit)", "license": "MIT", "input": 512},
@@ -97,7 +84,6 @@ MODELS = {
     # "tiles": False = no extra tile pass for "High detail" (the model already sees 1024²)
     "birefnet-1024": {"file": "birefnet-1024", "name": "BiRefNet 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
     "birefnet-matting-1024": {"file": "birefnet-matting-1024", "name": "BiRefNet matting 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
-    "birefnet-dis-1024": {"file": "birefnet-dis-1024", "name": "BiRefNet DIS 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
 }
 # small runtime files that live in the repo (vendor/ort); checked here so a version mismatch shows
 VENDOR = {
