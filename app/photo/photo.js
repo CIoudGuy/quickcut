@@ -1866,13 +1866,55 @@ export function mount(root) {
       cancel() { stroke = null; invalidate(true); },
     };
   }
+  /**
+   * Zoomed in (a layer pixel covers 2+ screen pixels): the live stroke is drawn at the layer's own
+   * resolution, over the visible part of the layer only, and shown as blocks, exactly as it will look
+   * once applied. (A screen-resolution preview would be smooth while painting and turn blocky on release.)
+   */
+  function syncStrokePixels(M, L) {
+    const s = stroke, W = cv.width, H = cv.height, lw = s.layer.canvas.width, lh = s.layer.canvas.height;
+    const Li = inv(L), pts = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => ap(Li, x, y));
+    const rx = clamp(Math.floor(Math.min(...pts.map((q) => q[0]))) - 1, 0, lw), ry = clamp(Math.floor(Math.min(...pts.map((q) => q[1]))) - 1, 0, lh);
+    const rw = clamp(Math.ceil(Math.max(...pts.map((q) => q[0]))) + 1, 0, lw) - rx, rh = clamp(Math.ceil(Math.max(...pts.map((q) => q[1]))) + 1, 0, lh) - ry;
+    if (!s.scr || s.scr.width !== W || s.scr.height !== H) s.scr = blank(W, H);
+    const key = `px|${W}x${H}|${L.join(",")}`;
+    if (key !== s.scrKey || !s.px || s.px.rx !== rx || s.px.ry !== ry || s.px.c.width !== Math.max(1, rw) || s.px.c.height !== Math.max(1, rh)) {
+      s.px = { rx, ry, c: blank(Math.max(1, rw), Math.max(1, rh)) };
+      s.drawn = 0;
+      s.scrKey = key;
+    }
+    if (s.drawn < s.dabs.length) {
+      const pg = s.px.c.getContext("2d");
+      pg.setTransform(1, 0, 0, 1, -rx, -ry);
+      for (let i = s.drawn; i < s.dabs.length; i++) { const [x, y, d] = s.dabs[i]; pg.drawImage(s.dab, x - d / 2, y - d / 2, d, d); }
+      s.drawn = s.dabs.length;
+    }
+    const g = s.scr.getContext("2d");
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = false;
+    g.setTransform(L[0], L[1], L[2], L[3], L[4], L[5]);
+    g.drawImage(s.px.c, rx, ry);
+    if (s.sel) {
+      const sk = `${W}x${H}|${M.join(",")}`;
+      if (!s.selScr || s.selScr.key !== sk) s.selScr = { key: sk, c: selCanvas(W, H, M, s.sel) };
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalCompositeOperation = "destination-in";
+      g.drawImage(s.selScr.c, 0, 0);
+      g.globalCompositeOperation = "source-over";
+    }
+  }
   /** Bring the screen-space stroke buffer up to date for the current view (called by frame()). */
   function syncStroke(M) {
     const s = stroke, W = cv.width, H = cv.height;
     const L = mul(M, lm(s.layer));
+    if (scaleOf(L) >= 2) { syncStrokePixels(M, L); return; }
+    s.px = null;
     const key = `${W}x${H}|${L.join(",")}`;
     if (!s.scr || s.scr.width !== W || s.scr.height !== H) { s.scr = blank(W, H); s.scrKey = ""; }
     const g = s.scr.getContext("2d");
+    g.imageSmoothingEnabled = true;
     if (key !== s.scrKey) {
       // view changed: redraw every dab
       g.setTransform(1, 0, 0, 1, 0, 0);
@@ -4976,6 +5018,7 @@ export function mount(root) {
     addMask: () => addMask(selLayer()),
     get tool() { return tool; },
     drawnPx: (l) => asDraw(l).src,
+    strokePreview: () => stroke && { scr: stroke.scr, L: mul(docM(), lm(stroke.layer)) },
     // smart layers / crop / resize / session (tests)
     get crop() { return crop; }, lm: (l) => lm(l), resizeImage: (w, hh) => resizeImage(w, hh), resizeCanvas: (w, hh) => resizeCanvas(w, hh),
     rasterize: () => rasterize(selLayer()), resetTransform: () => resetTransform(selLayer()), setCrop: (o) => { Object.assign(crop, o); crop.base = { ...crop.rect }; invalidate(true); },
