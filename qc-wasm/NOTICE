@@ -1,0 +1,16 @@
+qc-wasm
+Copyright (c) 2026 QuickCut contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+This crate is built on code from the Craft projects by storytold, each licensed under
+MIT OR Apache-2.0:
+
+- craft-libs (https://github.com/storytold/craft-libs): `craft-media`, the ISO BMFF (MP4/MOV)
+  and Matroska (MKV/WebM) demuxers and muxers, used as a Cargo dependency.
+- FilmCraft (https://github.com/storytold/filmcraft): `filmcraft-audio-dsp`, the WSOLA time
+  stretcher used for pitch-keeping speed changes, used as a Cargo dependency.
+
+Both are fetched from GitHub at the exact commits pinned in Cargo.toml. `src/lossless.rs`
+(the Instant cutter) is original QuickCut code written against the craft-media API.
+Other Cargo dependencies (wasm-bindgen, js-sys and their dependencies) keep their own licenses.

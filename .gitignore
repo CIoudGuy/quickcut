@@ -1,0 +1,11 @@
+# background remover files: download with app/models/fetch.py
+app/models/ort/
+app/models/birefnet-*/
+app/models/**/*.[0-9][0-9][0-9]
+# test media (copy your own files to run the tests that need them)
+app/_test/*.mp4
+app/_test/*.png
+app/_test/bg/
+# builds
+target/
+node_modules/

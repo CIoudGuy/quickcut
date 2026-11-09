@@ -1,0 +1,28 @@
+[package]
+name = "qc-wasm"
+description = "QuickCut Video in the browser: probe MP4/MOV/MKV/WebM, Instant (lossless) cut, MP4/WebM muxing, pitch-keeping speed change"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# its own workspace (the quickcut root workspace must not claim it)
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# ISO BMFF (MP4/MOV) and Matroska/WebM demuxers + muxers (craft-media's `isobmff` / `matroska`
+# modules; FilmCraft's `filmcraft-isobmff` is a re-export of the same code)
+craft-media = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d", default-features = false, features = ["isobmff", "matroska"] }
+# pitch-keeping speed change (WSOLA); dependency-free
+filmcraft-audio-dsp = { git = "https://github.com/storytold/filmcraft", rev = "bbe8ae217a76ee776ffb2ac0b1756078351a7326" }
+wasm-bindgen = "=0.2.129"
+js-sys = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

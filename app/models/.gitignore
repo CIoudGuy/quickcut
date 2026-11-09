@@ -1,0 +1,7 @@
+# Large binaries (model and WebAssembly runtime parts) are not kept in git.
+# Recreate them with: python models/fetch.py  (see README.md)
+*
+!.gitignore
+!README.md
+!fetch.py
+!manifest.json

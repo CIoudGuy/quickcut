@@ -1,0 +1,170 @@
+/* QuickCut Video (design "Video app"). Layout only; components come from shared/ui.css. */
+.qv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qv-ed { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qv .actions .file { cursor: default; }
+.qv .actions .sep.lead { margin: 0 8px; }
+.qv .actions .btn-2 .kbd { background: var(--bg-1); }
+
+/* preview */
+.qv-stage { position: relative; flex: 1; min-height: 120px; overflow: hidden; background: var(--stage); }
+.qv-box { position: absolute; overflow: hidden; }
+.qv-box.full { overflow: visible; }
+.qv-box video { position: absolute; display: block; max-width: none; transform-origin: 50% 50%; background: #000; }
+.qv-box video.off { visibility: hidden; }
+.qv-chip { position: absolute; left: 12px; top: 12px; height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--r-md); background: rgba(14, 14, 15, 0.85); color: #EDEDEF; font-size: 12px; pointer-events: none; }
+.qv-busy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--tx-2); font-size: 12px; pointer-events: none; }
+
+/* crop overlay */
+.qv-crop { position: absolute; inset: 0; touch-action: none; }
+.qv-crop .scr { position: absolute; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+.qv-crop .rect { position: absolute; border: 1.5px solid var(--acc); cursor: move; }
+.qv-crop .third { position: absolute; background: rgba(255, 255, 255, 0.4); pointer-events: none; }
+.qv-crop .hd { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; }
+.qv-crop .hd i { position: absolute; background: #FFFFFF; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); border-radius: 1px; pointer-events: none; }
+.qv-crop .ed { position: absolute; }
+.qv-cropbar { position: absolute; z-index: 2; left: 50%; top: 12px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 48px); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 6px 8px; }
+@media (max-width: 599px) {
+  .qv-cropbar { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; max-width: none; height: 52px; flex-wrap: nowrap; justify-content: flex-start; padding: 0 8px; border-radius: 0; box-shadow: none; overflow-x: auto; white-space: nowrap; }
+}
+
+/* transport */
+.qv-trans { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
+.qv-play { width: 44px; background: var(--bg-3); color: var(--tx-1); }
+.qv-play:hover:not(:disabled) { background: #2E2E31; }
+:root[data-theme="light"] .qv-play:hover:not(:disabled) { background: #DCDCDF; }
+.qv-time { margin-left: 8px; font: 500 13px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.qv-time span { color: var(--tx-2); }
+.qv-loop[aria-pressed="true"] { background: var(--bg-3); color: var(--acc-text); }
+
+/* timeline */
+.qv-tl { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-1); }
+/* the workspace: preview column (+ piece panel left/right) above the timeline; the panels are
+   docked into these flex boxes or float in .qv-workc (shared/dock.js) */
+.qv-workc { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qv-work { flex: 1 1 0; min-height: 120px; display: flex; min-width: 0; }
+.qv-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.qv-tlrow { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.qv-tlpanel .dk-body { overflow: hidden; }
+.qv-tlpanel.floating .qv-tl { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+/* the piece panel */
+.qv-sv { display: flex; flex-direction: column; gap: 16px; padding: 4px 12px 14px; font-size: 12px; color: var(--tx-2); }
+.qv-sec { display: flex; flex-direction: column; gap: 8px; }
+.qv-sech { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.qv-sv .lbl { color: var(--tx-2); font-weight: 500; }
+.qv-sv .val { font: 400 12px var(--mono); color: var(--tx-1); cursor: default; }
+.qv-sv .qv-speed .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+.qv-sv .qv-speed .seg > button { padding: 0 2px; }
+.qv-sv .qv-speed { display: block; }
+.qv-sv .num { width: 76px; background: var(--bg-2); }
+.qv-sv .slider { width: 100%; }
+.qv-mutenote { display: flex; align-items: center; gap: 6px; color: var(--tx-2); }
+.qv-mutenote svg { flex-shrink: 0; }
+/* docked above / below something (wide and short): the sections side by side */
+.qv-piecepanel.dk-wide .qv-sv { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
+.qv-piecepanel.dk-wide .qv-sec { flex: 1 1 220px; max-width: 360px; }
+.dk-sheet .qv-sv { padding: 4px 0 8px; }
+.qv-tlbar { height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 12px; overflow: hidden; }
+.qv-tlbar .sep { margin: 0 4px; }
+/* the marked range: a chip with its times and a clear button */
+.qv-track { position: relative; flex: 1; min-height: 140px; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; }
+.qv-track canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.qv-ph { position: absolute; left: 0; top: 0; width: 1.5px; margin-left: -0.75px; background: var(--tx-1); pointer-events: none; will-change: transform; }
+.qv-ph::before { content: ""; position: absolute; left: -4.75px; top: 0; width: 11px; height: 14px; border-radius: 3px 3px 6px 6px; background: var(--tx-1); }
+.qv-hov { position: absolute; left: 0; top: 0; width: 0; border-left: 1px dashed var(--tx-2); pointer-events: none; }
+.qv-hchip { position: absolute; left: 0; top: 0; height: 18px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: var(--r-sm); background: var(--bg-3); color: var(--tx-1); font: 500 11px var(--mono); box-shadow: var(--shadow); pointer-events: none; white-space: nowrap; }
+.qv-pchip { position: absolute; left: 0; top: 0; height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: var(--r-sm); background: var(--tx-1); color: var(--bg-0); font: 500 12px var(--mono); pointer-events: none; white-space: nowrap; }
+.qv-zoom .slider { width: 96px; }
+
+@media (max-width: 599px) {
+  .qv-stage { flex: none; height: 220px; }
+  .qv-trans { height: 52px; padding: 0 8px; gap: 2px; }
+  .qv-play { width: 52px; }
+  .qv-time { margin-left: 4px; font-size: 12px; }
+  .qv-tl { flex: 1; min-height: 0; }
+  .qv-work { flex: none; min-height: 0; }
+  .qv-tlpanel.dk-phone-docked { flex: 1 1 auto !important; }
+  .qv-tlbar { height: 52px; padding: 0 8px; }
+  .qv-track { flex: 1; height: auto; min-height: 210px; }
+  .qv-sv .qv-speed .seg { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .qv-sv .qv-speed .seg > button { height: 40px; }
+  .qv-sv .num { height: 40px; }
+  .qv .qv-fit { width: var(--ctl); padding: 0; }
+}
+
+/* export popover */
+.qv-pop .qv-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qv-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; border: 0; border-radius: var(--r-lg); text-align: left; background: transparent; color: var(--tx-1); box-shadow: inset 0 0 0 1px var(--border); font: 400 13px var(--font); transition: background var(--t-instant) var(--ease), box-shadow var(--t-instant) var(--ease); }
+.qv-card[aria-checked="true"] { background: var(--bg-3); box-shadow: inset 0 0 0 2px var(--acc); }
+.qv-card[aria-disabled="true"] { opacity: 0.45; }
+.qv-card .t { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.qv-why { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx-2); }
+.qv-exact { display: flex; flex-direction: column; gap: 10px; }
+.qv-exact .seg.fill > button { height: 28px; }
+.qv-q { grid-template-columns: repeat(3, 72px); grid-auto-flow: row; }
+.qv-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qv-pop .row-between .v { white-space: nowrap; }
+.qv-menu { gap: 2px !important; padding: 6px !important; }
+.qv-menu button { height: var(--ctl); padding: 0 10px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--tx-1); font: 400 13px var(--mono); text-align: left; }
+.qv-menu button:hover, .qv-menu button[aria-checked="true"] { background: var(--bg-3); }
+.qv-menu button[aria-checked="true"] { color: var(--acc-text); }
+@media (max-width: 599px) {
+  .qv-exact .seg.fill > button { height: 40px; }
+  .qv-q { grid-template-columns: repeat(3, minmax(0, 1fr)); flex: 1; }
+}
+
+/* snapping, speed field, playback-speed popover */
+.qv-crop .guide { position: absolute; background: var(--acc-text); pointer-events: none; }
+.qv-snap[aria-pressed="true"] { color: var(--acc-text); }
+.qv-speed { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qv-speed .num { width: 64px; background: var(--bg-3); }
+@media (max-width: 599px) { .qv-speed .num { width: 76px; height: 40px; } }
+.qv-exp .qv-pct { font: 500 11px var(--mono); padding: 0 5px; border-radius: var(--r-sm); background: var(--kbd-on); }
+/* phones: keep every row inside the screen width */
+.qv, .qv-ed, .qv-trans, .qv-tlbar { min-width: 0; overflow: hidden; }
+@media (max-width: 599px) {
+  .qv-trans .ib:not(.qv-play) { width: 36px; }
+  .qv-play { width: 48px; }
+  .qv-time { font-size: 11px; margin-left: 2px; }
+  .qv-tlbar { overflow-x: auto; scrollbar-width: none; }
+  .qv-tlbar .kbd { display: none; }
+  .qv-tlbar .btn-g { padding: 0 8px; }
+}
+/* unfinished Exact export: a row in the export popover, a card on the empty screen */
+.qv-cont { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--border); }
+.qv-cont .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.qv-cont .pop-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qv-jobthumb { display: inline-flex; align-items: center; justify-content: center; color: var(--acc-text); }
+.qv-jobbox { margin-bottom: 8px; }
+.qv-warn { color: var(--tx-1); }
+.qv-warn svg { color: var(--trim); flex-shrink: 0; }
+/* phones: the timeline bar is Split · Delete · Speed & vol · Fit (as designed); the magnet would
+   push Fit off screen. Snapping stays on (crop has its own magnet). */
+@media (max-width: 599px) { .qv-tlbar .qv-snap { display: none; } }
+/* Exact · File size */
+.qv-tgt { grid-template-columns: repeat(2, 108px); grid-auto-flow: row; }
+.qv-sizes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 2px; border-radius: var(--r-md); background: var(--bg-3); }
+.qv-sizes > button { height: calc(var(--seg-h) + 2px); padding: 0 2px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--tx-2); font: 500 12px/1 var(--font); white-space: nowrap; transition: background var(--t-instant) var(--ease), color var(--t-instant) var(--ease); }
+.qv-sizes > button:hover { color: var(--tx-1); }
+.qv-sizes > button[aria-checked="true"] { background: var(--bg-1); color: var(--tx-1); }
+.qv-szf { width: 216px; padding-right: 3px; }
+.qv-szf input { font-family: var(--mono); }
+.qv-unit { background: var(--bg-2); }
+.qv-unit > button { height: calc(var(--field-h) - 10px); padding: 0 8px; }
+.qv-pred { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--border); font-size: 13px; }
+.qv-pred .v { font: 400 12px var(--mono); color: var(--tx-1); }
+.qv-tier { font-weight: 600; }
+.qv-tier[data-tier="Excellent"], .qv-tier[data-tier="Good"] { color: var(--ok); }
+.qv-tier[data-tier="Fair"] { color: var(--trim); }
+.qv-tier[data-tier="Low"] { color: var(--bad); }
+.qv-imp .pop-sub { white-space: normal; }
+@media (max-width: 599px) {
+  .qv-tgt { grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; max-width: 240px; }
+  .qv-sizes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .qv-sizes > button { height: 40px; }
+  .qv-szf { width: auto; flex: 1; max-width: 240px; }
+  .qv-unit > button { height: 32px; }
+  .qv-pred .v { white-space: normal; text-align: right; }
+}
+.qv-sv.off .lbl, .qv-sv.off .val { opacity: 0.5; }
+
+.qv .actions [data-a="keys"] { color: var(--tx-2); font: 600 13px var(--font); }

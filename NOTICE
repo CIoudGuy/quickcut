@@ -1,0 +1,18 @@
+QuickCut
+Copyright (c) 2026 QuickCut contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Third-party code and data
+-------------------------
+- PhotoCraft (https://github.com/storytold): the Photo tool's blend modes (app/photo/blend.js and the
+  blend shader in app/photo/engine.js) are ported from it. MIT OR Apache-2.0.
+- FilmCraft and craft-libs (https://github.com/storytold): code in the Video tool's WebAssembly module
+  (qc-wasm, built into app/video/pkg), as Cargo dependencies. MIT OR Apache-2.0.
+- BiRefNet (https://github.com/ZhengPeng7/BiRefNet): the background remover's models, downloaded by
+  app/models/fetch.py. MIT.
+- ONNX Runtime Web (https://github.com/microsoft/onnxruntime): runs the models (app/vendor/ort). MIT.
+- Inter and JetBrains Mono: fonts in app/shared/fonts. SIL Open Font License 1.1 (OFL-*.txt there).
+
+The full notices (including the MIT text for PhotoCraft and FilmCraft) are in app/NOTICE.txt, which the
+site serves.

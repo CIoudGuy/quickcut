@@ -1,0 +1,91 @@
+{
+ "runtime": "ort",
+ "default": "birefnet-512",
+ "files": {
+  "ort": {
+   "file": "ort/ort-wasm-simd-threaded.asyncify.wasm",
+   "size": 28747738,
+   "sha256": "ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec",
+   "parts": [
+    "ort/ort-wasm-simd-threaded.asyncify.wasm.000",
+    "ort/ort-wasm-simd-threaded.asyncify.wasm.001"
+   ]
+  },
+  "birefnet-512": {
+   "file": "birefnet-512-v2/model_q4.onnx",
+   "size": 193727660,
+   "sha256": "90fd0f5500431725bad7e2e14b0168c5dc9a063f845414253ed85dc31755cbfe",
+   "parts": [
+    "birefnet-512-v2/model_q4.onnx.000",
+    "birefnet-512-v2/model_q4.onnx.001",
+    "birefnet-512-v2/model_q4.onnx.002",
+    "birefnet-512-v2/model_q4.onnx.003",
+    "birefnet-512-v2/model_q4.onnx.004",
+    "birefnet-512-v2/model_q4.onnx.005",
+    "birefnet-512-v2/model_q4.onnx.006",
+    "birefnet-512-v2/model_q4.onnx.007",
+    "birefnet-512-v2/model_q4.onnx.008",
+    "birefnet-512-v2/model_q4.onnx.009"
+   ]
+  },
+  "birefnet-1024": {
+   "file": "birefnet-1024/model_q4.onnx",
+   "size": 209955094,
+   "sha256": "07126345049e34e3f654b88fd578e32d7e33dabb5cf0acbdfa79bf7b18a96ca6",
+   "parts": [
+    "birefnet-1024/model_q4.onnx.000",
+    "birefnet-1024/model_q4.onnx.001",
+    "birefnet-1024/model_q4.onnx.002",
+    "birefnet-1024/model_q4.onnx.003",
+    "birefnet-1024/model_q4.onnx.004",
+    "birefnet-1024/model_q4.onnx.005",
+    "birefnet-1024/model_q4.onnx.006",
+    "birefnet-1024/model_q4.onnx.007",
+    "birefnet-1024/model_q4.onnx.008",
+    "birefnet-1024/model_q4.onnx.009",
+    "birefnet-1024/model_q4.onnx.010"
+   ]
+  },
+  "birefnet-matting-1024": {
+   "file": "birefnet-matting-1024/model_q4.onnx",
+   "size": 208446824,
+   "sha256": "235d5b2f45b96848d350d63168f4efe23f7b6668cc853e200f84fdd5b66356f0",
+   "parts": [
+    "birefnet-matting-1024/model_q4.onnx.000",
+    "birefnet-matting-1024/model_q4.onnx.001",
+    "birefnet-matting-1024/model_q4.onnx.002",
+    "birefnet-matting-1024/model_q4.onnx.003",
+    "birefnet-matting-1024/model_q4.onnx.004",
+    "birefnet-matting-1024/model_q4.onnx.005",
+    "birefnet-matting-1024/model_q4.onnx.006",
+    "birefnet-matting-1024/model_q4.onnx.007",
+    "birefnet-matting-1024/model_q4.onnx.008",
+    "birefnet-matting-1024/model_q4.onnx.009"
+   ]
+  }
+ },
+ "models": {
+  "birefnet-512": {
+   "file": "birefnet-512",
+   "name": "BiRefNet 512 (4-bit)",
+   "license": "MIT",
+   "input": 512
+  },
+  "birefnet-1024": {
+   "file": "birefnet-1024",
+   "name": "BiRefNet 1024 (4-bit)",
+   "license": "MIT",
+   "input": 1024,
+   "gpu": true,
+   "tiles": false
+  },
+  "birefnet-matting-1024": {
+   "file": "birefnet-matting-1024",
+   "name": "BiRefNet matting 1024 (4-bit)",
+   "license": "MIT",
+   "input": 1024,
+   "gpu": true,
+   "tiles": false
+  }
+ }
+}

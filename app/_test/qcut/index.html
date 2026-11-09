@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>qcut tests</title>
+<pre id="out">running…</pre>
+<script type="module">
+const t = await import("./qcuttest.js");
+const r = await t.run();
+document.getElementById("out").textContent = JSON.stringify(r, null, 1);
+window.qcutResult = r;
+</script>

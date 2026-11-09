@@ -1,0 +1,73 @@
+/* QuickCut Web design tokens.
+   Neutral greys only. Blue = primary action, selection, focus. Amber = video trim outline and
+   handles only, never a fill. Dark is the default; light via :root[data-theme="light"]. */
+@font-face { font-family: "Inter"; src: url("fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/Inter-Medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400 500; font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --bg-0: #0E0E0F;   /* page, canvas surround */
+  --bg-1: #161617;   /* top bar, floating bars, cards */
+  --bg-2: #1D1D1F;   /* fields, popovers, timeline */
+  --bg-3: #262628;   /* hover, active pill, pieces */
+  --border: #2E2E31; /* hairlines, drop zone dash */
+  --stage: #0A0A0B;  /* video preview surround */
+  /* text */
+  --tx-1: #EDEDEF;
+  --tx-2: #A1A1A8;
+  --tx-3: #6A6A70;   /* disabled only */
+  /* accent */
+  --acc: #2F6FEB;
+  --acc-hover: #2563EB;
+  --acc-press: #1D4ED8;
+  --acc-text: #6EA1FF;
+  --on-acc: #FFFFFF;
+  /* trim (video only) */
+  --trim: #F5B83D;
+  --on-trim: #1A1206;
+  /* status, overlay */
+  --ok: #34D399;
+  --ok-soft: rgba(52, 211, 153, 0.16);
+  --bad: #F87171;
+  --bad-soft: rgba(248, 113, 113, 0.16);
+  --wave: #8A8A92;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --kbd-on: rgba(255, 255, 255, 0.18);
+  /* shape */
+  --r-sm: 4px; --r-md: 6px; --r-lg: 8px; --r-xl: 12px;
+  /* motion: ease-out only, no bounce, no shimmer */
+  --t-instant: 80ms; --t-quick: 120ms; --t-base: 150ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  /* type */
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  /* sizes: desktop; phones override below */
+  --top-h: 44px;
+  --ctl: 32px;        /* control min */
+  --row-h: 48px;      /* action row */
+  --big-h: 40px;      /* popover primary */
+  --field-h: 32px;
+  --seg-h: 26px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #F3F3F4; --bg-1: #FFFFFF; --bg-2: #F0F0F1; --bg-3: #E6E6E8; --border: #DCDCDF; --stage: #1D1D1F;
+  --tx-1: #18181B; --tx-2: #56565E; --tx-3: #9C9CA4;
+  --acc-text: #2459D6; --trim: #B97A06;
+  --ok: #15803D; --ok-soft: rgba(21, 128, 61, 0.12); --bad: #DC2626; --bad-soft: rgba(220, 38, 38, 0.12);
+  --wave: #7A7A82; --shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+/* phones: touch-size controls (design: top bar 56, controls 44, sheet buttons 48) */
+@media (max-width: 599px) {
+  :root { --top-h: 56px; --ctl: 44px; --big-h: 48px; --field-h: 44px; --seg-h: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-instant: 0ms; --t-quick: 0ms; --t-base: 0ms; }
+}
