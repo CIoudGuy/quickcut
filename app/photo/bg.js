@@ -369,7 +369,8 @@ async function run({ id, bitmap, opts = {} }) {
   if (!session) throw new Error("not ready");
   // "High detail" with a model that has enough pixels of its own (1024²): no tiles, no 2048 grid
   // (measured: tiles cost 4× the time for a small gain, the bigger grid gained nothing)
-  if (curModel?.tiles === false) opts = { ...opts, hq: false };
+  // …except on very large photos (the page asks with opts.big): there the extra pass adds real detail
+  if (curModel?.tiles === false && !opts.big) opts = { ...opts, hq: false };
   const W = bitmap.width, H = bitmap.height, t0 = performance.now();
   progress(id, { stage: "run" });
   const md = session.inputMetadata?.[0], S0 = md?.shape?.[2];

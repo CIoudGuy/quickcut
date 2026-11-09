@@ -2287,13 +2287,18 @@ export function mount(root) {
     if ((x1 - x0) * (y1 - y0) >= 0.9 * W * H) return null;
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
+  const BIG_MP = 24; // from this size High detail adds the tile pass
   async function runBg(l, quality, job = (rb.job = { cancelled: false, t0: performance.now() })) {
     const d = doc, src = l.preBg || l.canvas, layerId = l.id, reg = visibleRegion(l, src);
     syncFoot();
     // what to try, in order: the chosen quality; if the GPU fails (driver error, lost device, out of
     // memory), the fast model on the GPU, then on the CPU (WebAssembly): always a result, maybe slower
     // (the retries also use the smaller working size of low-memory devices)
-    const tries = [{ model: MODEL_OF[quality], ep: bgEp(), hq: false, q: quality, small: lowMem }];
+    // very large photos on High detail (GPU): an extra pass over overlapping tiles for more detail,
+    // used only around the edges (about 4× the time, so not for ordinary sizes)
+    const mp = (reg ? reg.w * reg.h : src.width * src.height) / 1e6;
+    const big = quality === "hq" && !lowMem && bgEp() !== "wasm" && mp >= BIG_MP;
+    const tries = [{ model: MODEL_OF[quality], ep: bgEp(), hq: big, big, q: quality, small: lowMem }];
     tries.push({ model: MODEL_OF.fast, ep: bgEp(), hq: false, q: "fast", small: true });
     if (bgEp() !== "wasm") tries.push({ model: MODEL_OF.fast, ep: "wasm", hq: false, q: "fast", small: true });
     let r = null, ini = null, used = null, lastErr = null;
@@ -2314,9 +2319,9 @@ export function mount(root) {
         let alive = performance.now();
         const dog = ini.ep === "webgpu" ? setInterval(() => { if (performance.now() - alive > 90000) { clearInterval(dog); kill("bg"); rb.warm = null; } }, 2000) : 0;
         try {
-          r = await call("bg", { op: "run", bitmap, opts: { hq: t.hq, lowMem: t.small } }, [bitmap], (p) => {
+          r = await call("bg", { op: "run", bitmap, opts: { hq: t.hq, big: !!t.big, lowMem: t.small } }, [bitmap], (p) => {
             alive = performance.now();
-            if (p.stage === "hq") bgProgress("High detail pass…", p.f);
+            if (p.stage === "hq") bgProgress("Detail pass…", p.f);
             else if (p.stage === "refine") bgProgress("Refining edges…", p.f ?? null);
           });
         } finally { clearInterval(dog); }
