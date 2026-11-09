@@ -229,3 +229,58 @@ on 4 synthetic trees; on real thin objects it was worse than High detail (MSE 29
 real tree photo it cut the lower trunk where High detail kept the whole tree, and it was the only model
 that crashed the test browser in batch runs. Its parts stay in the bucket (`birefnet-dis-1024/`).
 
+
+### "Max" for strong GPUs: measured, not added (2026-11-09)
+
+Question: is there a model clearly better than High detail for a PC like the owner's (RTX 5080,
+16 GB)? Candidates, all MIT: **BiRefNet_HR** general 2048 (v1 release
+`BiRefNet_HR-general-epoch_130.onnx`, SHA-256 `db0217e9…be536a`), **BiRefNet_dynamic** general
+(HF `ZhengPeng7/BiRefNet_dynamic` @ `2803060`, run at 2048), **BEN2 Base** (HF `PramaLLC/BEN2` @
+`e48a207`, `BEN2_Base.onnx`; the full BEN2 is commercial-only), **InSPyReNet** (`transparent-background`
+1.3.4, `ckpt_base.pth`, static 1024 and its "dynamic" high-resolution mode).
+
+Test data (made by a script, deleted afterwards):
+- **AIM-500** (MIT, 500 real photos with hand-made alpha mattes, ≈ 1.7 MP): people 100, animals 200,
+  plants 75, objects 91, transparent 34; plus 48 of them upscaled to ≈ 30 MP ("large", scored at the
+  native size). **Caveat:** BiRefNet_HR and _dynamic were *trained on AIM-500* (High detail's 1024
+  model was not), so their AIM numbers are flattering.
+- **Owner's photos** (9 copies: tree, sound wave, eye, three gloves, two skeletons, ogre) against
+  Picsart's cut-outs (a reference, not ground truth). Clean for every model.
+- **23 real photos, 12–56 MP** (Wikimedia Commons, CC BY/BY-SA/CC0; people, dogs, objects, trees), no
+  ground truth: checked by eye.
+
+Error change against High detail (as users get it: + tile pass ≥ 24 MP); raw model output, same
+upsampling for all; negative = better:
+
+| | AIM people | AIM animals | AIM plants | AIM objects | AIM all (MSE · edge) | large ≈ 30 MP (MSE · edge) | owner vs Picsart (SAD) |
+|---|---|---|---|---|---|---|---|
+| BiRefNet_HR 2048 | +7 % | −33 % | −37 % | −13 % | −33 % · −19 % | −34 % · −26 % | **+17 % (worse)** |
+| BiRefNet_dynamic | +20 % | −14 % | −33 % | −9 % | −24 % · −9 % | −26 % · −18 % | +6 % |
+| InSPyReNet | +27 % | −4 % | −17 % | +1 % | +233 % (transparent ×10) | −7 % · −4 % | −4 % |
+| BEN2 Base | +596 % | +271 % | +178 % | +313 % | +448 % | +147 % | ±0 % |
+
+(AIM columns are alpha MSE; the trained-on-AIM caveat applies to HR and dynamic.)
+
+HR, prepared like the others (fp16, rewrites, 4-bit: 271.5 MB in 13 parts, prepared SHA-256
+`a65de09d…062dc8`) and run through the real worker in Chrome. The conversion is right: its output is
+within 0.1–14 / 1000 mean alpha of ONNX Runtime CUDA on the same file, which is within 0.1–12 / 1000
+of the fp32 original (= PyTorch). With the app's refinement, against Picsart on the owner's photos:
+High detail 39.3 / IoU 0.928, HR **53.1 / 0.869**: worse on all nine (tree 28 → 67: it keeps the
+"Ps" logo; sound wave 59 → 116: it makes the mesh see-through).
+
+On the 23 real photos, by eye: HR is better on fur and loose hair (golden retriever, a long-haired
+dog, white hair: softer, more strands), about equal on portraits, products and bare trees, and worse
+elsewhere: it drops low-contrast parts of the subject (the white sheath of a cable), keeps haze and
+ground under a tree, and keeps extra objects.
+
+| RTX 5080, Chrome, real worker | start | 12–18 MP | 24–56 MP | GPU memory at peak |
+|---|---|---|---|---|
+| High detail | 4.6 s | 1.3–1.7 s | 5–11 s (tile pass) | ≈ +8.8 GB |
+| HR 2048 | 9.9 s | 6.8–8.5 s | 7.4–9.3 s | ≈ +12.1–12.4 GB (15.4 of 16 GB used) |
+
+**Verdict:** none of them is clearly better than High detail on real photos. HR is about 30 %
+better on AIM-500 (which it was trained on) and on fur, but worse on the owner's pictures, 5× slower
+on normal photos and fills a 16 GB card. BEN2 Base and InSPyReNet are not better. Nothing was wired
+in. HR's prepared parts were kept locally in `../models/birefnet-hr-2048/` (not uploaded, not in
+`manifest.json`); recreating them needs the source above added back to `fetch.py`
+(`"fp16": True, "sum_to_add": True`).

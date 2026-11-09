@@ -190,7 +190,7 @@ impl Media {
     /// Instant cut planned for a direct copy: write `head()`, then copy each `runs()` pair
     /// `[source offset, length]` from the source file, in order. Moov first (fast start).
     pub fn instant_layout(&self, pieces: Vec<f64>) -> Result<InstantLayout, JsError> {
-        let l = core::instant_layout(&self.c, &pieces).map_err(err)?;
+        let l = core::instant_layout(&self.c, &pieces, self.src.len).map_err(err)?;
         Ok(InstantLayout { l })
     }
 }

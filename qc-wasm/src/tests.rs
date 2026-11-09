@@ -293,7 +293,7 @@ fn instant_layout_matches_the_streamed_cut_with_moov_first() {
     let c = core::open(&src).unwrap();
     for pieces in [vec![0.5, 1.5, 3.0, 4.0, 2.0, 2.5], vec![0.0, 6.0], vec![1.2, 4.7]] {
         let (want, d, _) = core::instant(&c, &src, &pieces, Cursor::new(Vec::new()), |_, _| {}).unwrap();
-        let l = core::instant_layout(&c, &pieces).unwrap();
+        let l = core::instant_layout(&c, &pieces, f.len() as u64).unwrap();
         let got = assemble(&f, &l);
         assert_eq!(got.len() as u64, l.size);
         assert_eq!(l.duration, d);
@@ -411,4 +411,20 @@ fn matroska_track_with_thousands_of_content_encodings_is_handled() {
     let f = craft_media::matroska::open(&hostile).unwrap();
     assert!(f.tracks.iter().all(|t| t.encodings.len() <= 16), "{:?}", f.tracks.iter().map(|t| t.encodings.len()).collect::<Vec<_>>());
     assert!(t0.elapsed().as_secs() < 5);
+}
+
+#[test]
+fn instant_layout_refuses_samples_past_the_end_of_the_file() {
+    // a damaged or hostile index: one frame claims 4 GB in a small file. The layout must refuse it
+    // instead of allocating the claimed size.
+    let f = fixture();
+    let src = Mem(f.clone());
+    let mut c = core::open(&src).unwrap();
+    let core::Container::Mp4(m) = &mut c else { panic!() };
+    m.tracks[0].samples[3].size = u32::MAX;
+    let e = core::instant_layout(&c, &[0.0, 6.0], f.len() as u64).err().expect("refused");
+    assert!(e.contains("past its end"), "{e}");
+    // an untouched file still lays out
+    let c = core::open(&src).unwrap();
+    assert!(core::instant_layout(&c, &[0.0, 6.0], f.len() as u64).is_ok());
 }

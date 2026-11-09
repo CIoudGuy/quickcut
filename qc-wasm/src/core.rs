@@ -640,10 +640,19 @@ pub(crate) fn shift_offsets(b: &[u8], shift: u64, force64: bool, depth: u32) -> 
     Ok(out)
 }
 
-/// Plan an Instant cut for a direct copy (see [`Layout`]). Same cut as [`instant`].
-pub fn instant_layout(c: &Container, pieces: &[f64]) -> Result<Layout, String> {
+/// Plan an Instant cut for a direct copy (see [`Layout`]). Same cut as [`instant`]. `src_len`: the
+/// source file's length; every sample of the cut must lie inside it.
+pub fn instant_layout(c: &Container, pieces: &[f64], src_len: u64) -> Result<Layout, String> {
     let Container::Mp4(m) = c else { return Err("Instant cuts MP4 and MOV files only.".into()) };
     let plan = lossless::plan(m, &pairs(pieces))?;
+    // the layout below allocates each sample's declared size: a damaged (or hostile) index must not
+    // make a small file claim gigabyte samples
+    for (_, ti, i) in plan.order(m) {
+        let s = m.tracks.get(ti).and_then(|t| t.samples.get(i)).ok_or("no such sample")?;
+        if s.offset.checked_add(u64::from(s.size)).is_none_or(|e| e > src_len) {
+            return Err("The file is damaged: a frame lies past its end.".into());
+        }
+    }
     let probe = ProbeRef::default();
     let p = crate::Progress::default();
     let flag = probe.clone();
