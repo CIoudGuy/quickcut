@@ -16,8 +16,9 @@ Upstream (all permissively licensed):
     (huggingface.co/onnx-community/BiRefNet-ONNX), fp16: "High detail".
   * BiRefNet-matting 1024×1024 (MIT), ONNX export from the BiRefNet v1 release (fp32): soft alpha
     for hair, fur and glass.
-  * BiRefNet-portrait and BiRefNet-DIS 1024×1024 (MIT), ONNX exports from the same v1 release
-    (fp32): "People" (trained on people only) and "Fine detail" (DIS5K: trees, bikes, fences).
+  * BiRefNet-DIS 1024×1024 (MIT), ONNX export from the same v1 release (fp32): "Fine detail"
+    (DIS5K: trees, bikes, fences). (BiRefNet-portrait was measured as "People" and left out:
+    no better than High detail on people, see ../photo/BG_REMOVER.md.)
   * ONNX Runtime Web 1.31.1 WebAssembly binary (MIT, github.com/microsoft/onnxruntime).
 
 Preparation of the model (deterministic):
@@ -77,18 +78,6 @@ SOURCES = {
         "sum_to_add": True,
         "prepared_sha256": "235d5b2f45b96848d350d63168f4efe23f7b6668cc853e200f84fdd5b66356f0",
     },
-    # BiRefNet-portrait 1024×1024 (MIT; trained on people only), BiRefNet v1 release (tag v1 =
-    # commit a0cf992), fp32 (973 MB) → fp16 → 4-bit: "People".
-    # MIT also on huggingface.co/ZhengPeng7/BiRefNet-portrait @ b656196.
-    "birefnet-portrait-1024": {
-        "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-portrait-epoch_150.onnx",
-        "sha256": "1ba1c8ff5a7bbfadc8d8d13fb11d7be793f91f23d9d466549e37a854f6668f99",
-        "out": "birefnet-portrait-1024/model_q4.onnx",
-        "prepare": True,
-        "fp16": True,
-        "sum_to_add": True,
-        "prepared_sha256": "fc8f205c08bbfd768315c5988818ba418e1d78e3f925a307d9934d6ffbc39ee6",
-    },
     # BiRefNet-DIS 1024×1024 (MIT; trained on DIS5K: very detailed objects such as trees, bikes,
     # chairs, fences), BiRefNet v1 release, fp32 (973 MB) → fp16 → 4-bit: "Fine detail".
     # MIT also on huggingface.co/ZhengPeng7/BiRefNet-DIS5K @ 343602b.
@@ -108,7 +97,6 @@ MODELS = {
     # "tiles": False = no extra tile pass for "High detail" (the model already sees 1024²)
     "birefnet-1024": {"file": "birefnet-1024", "name": "BiRefNet 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
     "birefnet-matting-1024": {"file": "birefnet-matting-1024", "name": "BiRefNet matting 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
-    "birefnet-portrait-1024": {"file": "birefnet-portrait-1024", "name": "BiRefNet portrait 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
     "birefnet-dis-1024": {"file": "birefnet-dis-1024", "name": "BiRefNet DIS 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
 }
 # small runtime files that live in the repo (vendor/ort); checked here so a version mismatch shows

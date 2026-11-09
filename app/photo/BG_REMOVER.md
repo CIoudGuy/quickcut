@@ -218,3 +218,9 @@ Cache Storage never held a partial file, and a retry downloaded, verified and ra
   120 on the synthetic set, whole-subject losses such as a dark head on a dark background, holes in
   solid areas 30× more often). Multi-threading gives most of its speed-up with no quality loss.
 
+**People removed (2026-11-09):** BiRefNet-portrait was offered as "People" for a few hours and then
+taken out at the owner's request: on people it measured about equal to High detail (MSE 1.06 vs 1.02)
+and worse on everything else, so it only added a choice and a download. Its prepared parts stay in the
+bucket (`birefnet-portrait-1024/`); the page's housekeeping deletes copies already downloaded, since the
+manifest no longer lists them.
+
