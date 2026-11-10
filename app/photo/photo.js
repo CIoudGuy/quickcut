@@ -4477,6 +4477,39 @@ export function mount(root) {
    * A saved document back (not shown yet): `st` is a project doc or an old session's state, `load(v)`
    * turns one saved pixel value into {c} (a canvas) or {alpha} (mask bytes). → {d, ui}
    */
+  // A project file is untrusted: everything from it that reaches the page (tool settings, text, layer
+  // and group fields, crop, view) is checked against what it may be; anything else is dropped.
+  const HEXC = /^#[0-9A-Fa-f]{6}$/;
+  const BLEND_IDS = new Set(BLENDS.map((b) => b[0]));
+  const str = (v, max = 200) => (typeof v === "string" ? v.slice(0, max) : undefined);
+  /** the checked fields `c`, in the order the file had them (fields only in `c` go last) */
+  const inOrder = (src, c) => { const o = {}; for (const k of Object.keys(src)) if (k in c) o[k] = c[k]; for (const k of Object.keys(c)) if (!(k in o)) o[k] = c[k]; return o; };
+  /** brush / eraser / textOpts / text: known keys with the right kinds of values only */
+  function cleanOpts(o, isText = false) {
+    if (!o || typeof o !== "object") return undefined;
+    const r = {};
+    for (const k of ["color", "bg"]) if (HEXC.test(o[k])) r[k] = o[k];
+    for (const k of ["size", "hard", "opacity", "weight"]) if (num(o[k])) r[k] = o[k];
+    if (isText) {
+      if (typeof o.str === "string") r.str = o.str.slice(0, 20000);
+      for (const k of ["font", "style", "ps"]) if (typeof o[k] === "string") r[k] = o[k].slice(0, 120);
+      if (o.ps === null) r.ps = null;
+      if (["left", "center", "right"].includes(o.align)) r.align = o.align;
+      if (typeof o.italic === "boolean") r.italic = o.italic;
+    }
+    return inOrder(o, r);
+  }
+  function cleanCrop(c) {
+    if (!c || typeof c !== "object" || !c.rect || !["x", "y", "w", "h"].every((k) => num(c.rect[k]))) return null;
+    if (![c.r, c.fx, c.fy, c.a].every((v) => v === undefined || num(v))) return null;
+    if (c.bw !== undefined && !num(c.bw) || c.bh !== undefined && !num(c.bh)) return null;
+    const out = { ...c, rect: { x: c.rect.x, y: c.rect.y, w: c.rect.w, h: c.rect.h } };
+    if (c.base) out.base = ["x", "y", "w", "h"].every((k) => num(c.base[k])) ? { x: c.base.x, y: c.base.y, w: c.base.w, h: c.base.h } : null;
+    if (!ASPECTS.some((a) => a[0] === c.preset)) out.preset = "Free";
+    for (const k of ["ratio"]) if (out[k] !== undefined && !num(out[k])) out[k] = 0;
+    if (c.lock !== undefined) out.lock = !!c.lock;
+    return out;
+  }
   async function restoreDoc(st, load) {
     if (!st || !Array.isArray(st.layers) || !st.layers.length || !Number.isInteger(st.w) || !Number.isInteger(st.h) || st.w < 1 || st.h < 1) throw new Error("not a document");
     const texts = [...st.layers.map((l) => l?.text).filter((t) => t && typeof t === "object"), st.textOpts].filter(Boolean);
@@ -4485,7 +4518,19 @@ export function mount(root) {
       const { px, blob, maskBlob, maskOn, mask, orig, preBg, bgFixed } = s0;
       const rest = {};
       for (const k of LAYER_KEYS) if (s0[k] !== undefined) rest[k] = s0[k];
-      if (!Number.isInteger(rest.id) || !["x", "y", "opacity"].every((k) => rest[k] === undefined || num(rest[k]))) throw new Error("bad layer");
+      if (!Number.isInteger(rest.id) || !["x", "y", "opacity", "ta", "tb", "tc", "td"].every((k) => rest[k] === undefined || num(rest[k]))) throw new Error("bad layer");
+      if (rest.parent !== undefined && rest.parent !== null && !Number.isInteger(rest.parent)) delete rest.parent;
+      if (rest.name !== undefined) rest.name = str(rest.name) ?? "Layer";
+      if (rest.blend !== undefined && !BLEND_IDS.has(rest.blend)) rest.blend = "normal";
+      if (!["image", "text", undefined].includes(rest.kind)) delete rest.kind;
+      for (const k of ["named", "visible", "clip"]) if (rest[k] !== undefined) rest[k] = !!rest[k];
+      if (rest.text !== undefined) {
+        rest.text = cleanOpts(rest.text, true);
+        if (!rest.text || typeof rest.text.str !== "string") { delete rest.text; if (rest.kind === "text") throw new Error("bad layer"); }
+        else { if (!HEXC.test(rest.text.color)) rest.text.color = "#FFFFFF"; if (!(rest.text.size > 0)) rest.text.size = 120; if (!rest.text.font) rest.text.font = "Inter"; }
+      }
+      if (rest.backdropFor !== undefined && !Number.isInteger(rest.backdropFor)) delete rest.backdropFor;
+      if (rest.backdrop !== undefined && (typeof rest.backdrop !== "object" || rest.backdrop === null)) delete rest.backdrop;
       const l = newLayer(rest);
       if (l.kind === "text" && l.text) renderText(l);
       else l.canvas = (await load(px || { b: blob })).c;
@@ -4497,7 +4542,7 @@ export function mount(root) {
           const base = m.base ? await load(m.base) : null;
           const ba = base ? base.alpha || alphaOf(base.c) : null;
           const okBase = ba && ba.length === mc.width * mc.height;
-          Object.assign(l, { mask: mc, maskBase: okBase ? ba : alphaOf(mc), maskOn: m.on !== false, maskShift: okBase ? m.shift || 0 : 0, maskSoft: okBase ? m.soft || 0 : 0 });
+          Object.assign(l, { mask: mc, maskBase: okBase ? ba : alphaOf(mc), maskOn: m.on !== false, maskShift: okBase && num(m.shift) ? m.shift : 0, maskSoft: okBase && num(m.soft) ? m.soft : 0 });
         }
       }
       if (orig && !l.mask && l.kind !== "text") {
@@ -4511,11 +4556,18 @@ export function mount(root) {
       if (!l.preBg || !l.bgFixed) { delete l.preBg; delete l.bgFixed; }
       return l;
     }));
-    const groups = (Array.isArray(st.groups) ? st.groups : []).filter((g) => g && Number.isInteger(g.id)).map((g) => ({ ...g, group: true }));
+    const groups = (Array.isArray(st.groups) ? st.groups : []).filter((g) => g && Number.isInteger(g.id)).map((g) => {
+      const c = {
+        id: g.id, group: true, parent: Number.isInteger(g.parent) ? g.parent : null, name: str(g.name) ?? "Group", ...(g.named !== undefined && { named: !!g.named }),
+        opacity: num(g.opacity) ? g.opacity : 1, blend: g.blend === PASS[0] || BLEND_IDS.has(g.blend) ? g.blend : PASS[0], visible: g.visible !== false, clip: !!g.clip,
+      };
+      return inOrder(g, c); // unknown fields are dropped
+    });
     const has = (id) => layers.some((l) => l.id === id) || groups.some((g) => g.id === id);
     const sel = has(st.sel) ? st.sel : layers[layers.length - 1].id;
-    const d = { name: String(st.name || "Untitled"), size: num(st.size) ? st.size : 0, type: String(st.type || ""), w: st.w, h: st.h, w0: num(st.w0) ? st.w0 : st.w, h0: num(st.h0) ? st.h0 : st.h, crop: st.docCrop || null, layers, groups, collapsed: Array.isArray(st.collapsed) ? st.collapsed : [], sel, ver: 1, note: String(st.note || "") };
-    const ui = { tool: st.tool, crop: st.crop || null, view: st.view || null, multi: (Array.isArray(st.multi) ? st.multi : []).filter((id) => has(id) && id !== sel), selection: st.selection || null, brush: st.brush, eraser: st.eraser, textOpts: st.textOpts, selShape: st.selShape };
+    const d = { name: str(st.name) || "Untitled", size: num(st.size) ? st.size : 0, type: str(st.type, 80) || "", w: st.w, h: st.h, w0: num(st.w0) ? st.w0 : st.w, h0: num(st.h0) ? st.h0 : st.h, crop: cleanCrop(st.docCrop), layers, groups, collapsed: Array.isArray(st.collapsed) ? st.collapsed.filter(Number.isInteger) : [], sel, ver: 1, note: str(st.note, 120) || "" };
+    const vw = st.view && typeof st.view === "object" && ["ox", "oy", "z"].every((k) => num(st.view[k])) && st.view.z > 0 ? { ox: st.view.ox, oy: st.view.oy, z: st.view.z, fitted: !!st.view.fitted, cap: st.view.cap !== false } : null;
+    const ui = { tool: TOOLS.some((t) => t[0] === st.tool) ? st.tool : "move", crop: cleanCrop(st.crop), view: vw, multi: (Array.isArray(st.multi) ? st.multi : []).filter((id) => has(id) && id !== sel), selection: st.selection || null, brush: cleanOpts(st.brush), eraser: cleanOpts(st.eraser), textOpts: cleanOpts(st.textOpts, true), selShape: ["rect", "ellipse", "lasso"].includes(st.selShape) ? st.selShape : undefined };
     return { d, ui };
   }
   /** Show a restored document. */

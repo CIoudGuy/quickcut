@@ -12,8 +12,10 @@
 .ks-row.info .ks-k { font: 500 11px/1 var(--mono); }
 .ks-c { border: 0; cursor: pointer; white-space: nowrap; }
 .ks-c:hover { background: var(--bg-2); color: var(--tx-1); outline: 1px solid var(--border); }
-.ks-c.add { opacity: 0; min-width: 18px; justify-content: center; }
-.ks-row:hover .ks-c.add, .ks-row:focus-within .ks-c.add, .ks-c.add.rec { opacity: 1; }
+/* hidden by colour, not opacity: an opacity change inside the two-column grid repaints the whole
+   sheet (~80 ms per row the pointer crosses) */
+.ks-c.add { min-width: 18px; justify-content: center; }
+.ks-row:not(:hover):not(:focus-within) .ks-c.add:not(.rec) { color: transparent; background: transparent; }
 .ks-c.rec { background: var(--acc); color: var(--on-acc); min-width: 28px; justify-content: center; animation: ks-pulse 1s ease-in-out infinite; }
 .ks-c.bad { animation: ks-shake 0.28s; outline: 1px solid var(--bad); }
 .ks-r { width: 22px; height: 22px; flex-shrink: 0; }
@@ -27,7 +29,7 @@
 @keyframes ks-shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 @media (max-width: 599px) {
   .ks-grid { columns: 1; }
-  .ks-c.add { opacity: 1; }
+  .ks-row:not(:hover):not(:focus-within) .ks-c.add:not(.rec) { color: var(--tx-2); background: var(--bg-3); }
   .ks-row { min-height: 34px; }
   .ks-r { width: 30px; height: 30px; }
 }
