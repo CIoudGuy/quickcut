@@ -10,6 +10,7 @@ import * as qcut from "../shared/qcut.js";
 import { createKeys, baseKey } from "../shared/keys.js";
 import { composite, tree, buffers, mul, T, S, R, ap, inv, scaleOf, reduced, BLENDS, BLEND_MENU, PASS, canvasLimit, fitScale, I } from "./engine.js";
 import { deriveMask, alphaToImageData } from "./maskops.js";
+import { createUpscale } from "./upscale-ui.js";
 
 const cssHref = new URL("./photo.css", import.meta.url).href;
 if (!document.querySelector(`link[href="${cssHref}"]`)) document.head.append(h(`<link rel="stylesheet" href="${cssHref}">`));
@@ -56,8 +57,8 @@ const pool = {};
 const onIdle = {}; // name → called when that worker said it's idle and was ended
 function worker(name) {
   if (pool[name]) return pool[name];
-  // "bg" is the background remover (model + ONNX Runtime); every other name is a photo worker
-  const url = name === "bg" ? "./bg.js" : "./worker.js";
+  // "bg" is the background remover, "up" the upscaler (each: model + ONNX Runtime); every other name is a photo worker
+  const url = name === "bg" ? "./bg.js" : name === "up" ? "./upscale.js" : "./worker.js";
   const w = { wk: new Worker(new URL(url, import.meta.url), { type: "module" }), pending: new Map(), seq: 0, docVer: -1 };
   w.wk.onmessage = (e) => {
     // an idle worker (the background remover, after a minute without work) is ended: that frees
@@ -330,23 +331,35 @@ export function mount(root) {
     toast(`Layer ${unpaintable(l)}`, { bad: true, action: "Rasterize", onAction: () => rasterize(l), ms: 7000 });
     return null;
   }
+  /** After the background remover a layer holds two copies of its pixels: the photo (`preBg`) and the
+   *  one with cleaned edge colours (`bgFixed`); `canvas` is one of them. Anything that replaces the
+   *  layer's pixels goes through here so both copies get the same change. With only one of them
+   *  changed, hiding the mask or painting Keep showed the cleaned colours as a halo on the photo. */
+  const bgPair = (l) => !!(l.preBg && l.bgFixed && (l.canvas === l.preBg || l.canvas === l.bgFixed));
+  function mapPx(l, fn) {
+    if (!bgPair(l)) { l.canvas = fn(l.canvas); delete l.preBg; delete l.bgFixed; return; }
+    const clean = l.canvas === l.bgFixed;
+    l.preBg = fn(l.preBg); l.bgFixed = fn(l.bgFixed);
+    l.canvas = clean ? l.bgFixed : l.preBg;
+  }
   /** Turn a smart layer into plain pixels at the size it is seen (its mask too); one undo step. */
   function rasterize(l) {
     if (!l || l.group || plain(l)) return true;
     const b = pxBox(aabb(l));
     if (tooBig(b.w, b.h)) { toast(tooBigMsg(b.w, b.h), { bad: true }); return false; }
-    const A = mul(T(-b.x, -b.y), lm(l)), red = reduced(l.canvas, scaleOf(A));
+    const A = mul(T(-b.x, -b.y), lm(l));
     record("Rasterize layer", () => {
-      const c = blank(b.w, b.h), g = c.getContext("2d"), D = red ? mul(A, S(red.sx, red.sy)) : A;
-      g.imageSmoothingQuality = "high";
-      g.setTransform(D[0], D[1], D[2], D[3], D[4], D[5]);
-      g.drawImage(red ? red.src : l.canvas, 0, 0);
       remask(l, b.w, b.h, (mg, m) => { mg.setTransform(A[0], A[1], A[2], A[3], A[4], A[5]); mg.drawImage(m, 0, 0); });
-      l.canvas = c;
+      mapPx(l, (src) => {
+        const red = reduced(src, scaleOf(A)), c = blank(b.w, b.h), g = c.getContext("2d"), D = red ? mul(A, S(red.sx, red.sy)) : A;
+        g.imageSmoothingQuality = "high";
+        g.setTransform(D[0], D[1], D[2], D[3], D[4], D[5]);
+        g.drawImage(red ? red.src : src, 0, 0);
+        return c;
+      });
       for (const key of TF) delete l[key];
       l.x = b.x; l.y = b.y;
       if (l.kind === "text") { l.kind = "image"; delete l.text; }
-      delete l.preBg; delete l.bgFixed;
     });
     return true;
   }
@@ -483,14 +496,14 @@ export function mount(root) {
     if (x1 <= x0 || y1 <= y0) return;
     const rr = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     commitPending();
-    const before = region(c, rr);
-    delete layer.preBg; delete layer.bgFixed; // nor do the before/after edge colours
-    const g = c.getContext("2d");
-    g.save(); fn(g, rr); g.restore();
-    bump(c);
-    pyrUpdate(c, rr);
-    const after = region(c, rr);
-    push({ label, bytes: cbytes(before) * 2, undo: () => put(c, rr, before), redo: () => put(c, rr, after) });
+    // after the background remover: the same paint goes into the photo and the cleaned copy (see mapPx)
+    const cs = bgPair(layer) ? [layer.preBg, layer.bgFixed] : [c];
+    if (cs.length === 1) { delete layer.preBg; delete layer.bgFixed; }
+    const before = cs.map((x) => region(x, rr));
+    for (const x of cs) { const g = x.getContext("2d"); g.save(); fn(g, rr); g.restore(); bump(x); pyrUpdate(x, rr); }
+    const after = cs.map((x) => region(x, rr));
+    const all = (parts) => cs.forEach((x, i) => { put(x, rr, parts[i]); bump(x); pyrUpdate(x, rr); });
+    push({ label, bytes: cbytes(before[0]) * 2 * cs.length, undo: () => all(before), redo: () => all(after) });
     changed();
   }
 
@@ -2032,7 +2045,6 @@ export function mount(root) {
     g.imageSmoothingQuality = "high";
     drawFn(g, l.mask);
     Object.assign(l, { mask: c, maskBase: alphaOf(c), maskShift: 0, maskSoft: 0 });
-    delete l.preBg; delete l.bgFixed;
   }
   /** Re-apply the edge controls inside rectangle `r` of the mask from its base. */
   function rederiveRect(mask, base, shift, soft, r) {
@@ -2127,6 +2139,11 @@ export function mount(root) {
   onIdle.bg = () => { rb.warm = null; };
   // phones and low-memory devices: no high-detail pass and no big model (they hold several big buffers at once)
   const lowMem = (navigator.deviceMemory && navigator.deviceMemory <= 4) || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  // Upscale (AI in a worker; see UPSCALE.md): the button, picker and progress card are in upscale-ui.js
+  const upscaler = createUpscale({
+    doc: () => doc, selLayer: () => selLayer(), call, kill, stage, lowMem: () => lowMem, tooBig: (w, hh) => tooBig(w, hh), tooBigMsg: (w, hh) => tooBigMsg(w, hh), blank, alphaOf, lin, setLm, undo: () => undo(), sync: () => syncFoot(),
+    commit: () => { commitText(); if (crop) applyCrop(); }, resize: (w, hh, tweak, label) => resizeImage(w, hh, tweak, label),
+  });
   // Fast: BiRefNet 512 + full-resolution edge refinement. High detail: BiRefNet 1024, a bigger model
   // (own download, no tiling). Hair & fur: BiRefNet matting 1024 (own download). See BG_REMOVER.md
   // (People and Fine detail were tried and taken out: no better than High detail).
@@ -2891,8 +2908,9 @@ export function mount(root) {
     const groups = doc.groups.filter((g) => g === g0 || inside(g, g0.id)).map(copyG);
     for (const g of groups) if (ids.has(g.parent)) g.parent = ids.get(g.parent);
     const layers = layersOf(g0).map((l) => {
-      const d = { ...l, id: seq++, parent: ids.get(l.parent), canvas: copyCanvas(l.canvas) };
-      delete d.preBg; delete d.bgFixed; delete d.backdropFor; delete d.backdrop;
+      const d = { ...l, id: seq++, parent: ids.get(l.parent) };
+      mapPx(d, copyCanvas);
+      delete d.backdropFor; delete d.backdrop;
       if (l.mask) { d.mask = copyCanvas(l.mask); d.maskBase = l.maskBase.slice(); }
       return d;
     });
@@ -2908,8 +2926,9 @@ export function mount(root) {
       if (g) { record("Duplicate group", () => { doc.sel = dupGroup(g).id; multi.clear(); }); return; }
       const l = selLayer();
       if (!l) return;
-      const d = { ...l, id: seq++, name: `${l.name} copy`, named: true, canvas: copyCanvas(l.canvas) };
-      delete d.preBg; delete d.bgFixed; delete d.backdropFor; delete d.backdrop;
+      const d = { ...l, id: seq++, name: `${l.name} copy`, named: true };
+      mapPx(d, copyCanvas);
+      delete d.backdropFor; delete d.backdrop;
       if (l.mask) { d.mask = copyCanvas(l.mask); d.maskBase = l.maskBase.slice(); }
       addLayer(d, "Duplicate layer");
     },
@@ -3553,7 +3572,7 @@ export function mount(root) {
       html = l ? `<span class="grp"><span class="lname">${l.group ? `<span class="lthumb fd">${icon("folder", 16)}</span>` : l.kind === "text" ? `<span class="tg lthumb" style="display:inline-flex;align-items:center;justify-content:center;background:#3A3A3E;color:#fff;font:600 11px var(--font)">T</span>` : `<canvas class="lthumb"></canvas>`}<span>${l.kind === "text" && !l.named ? "Text layer" : esc(l.name)}</span></span></span>
         <span class="grp">${snapBtn()}</span>
         ${!l.group && !plain(l) ? `<span class="grp" role="group" aria-label="Transform">${tfLabel(l)}<button class="btn-g" type="button" data-p="tfreset" title="Reset transform">Reset</button><button class="btn-g" type="button" data-p="raster" title="Rasterize">Rasterize</button></span>` : ""}
-        ${l.kind && l.kind !== "text" ? `<span class="grp end">${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}</span>` : ""}`
+        ${l.kind && l.kind !== "text" ? `<span class="grp end">${upscaler.button()}${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}</span>` : ""}`
         : "";
     } else if (mode === "select") {
       html = `${noMods() ? `<span class="grp"><div class="seg ph-selmode" role="radiogroup" aria-label="Selection mode">${SEL_OPS.map(([id, label]) => `<button type="button" role="radio" data-sm="${id}" aria-checked="${selMode === id}" aria-label="${label}" title="${label}">${icon(PI[{ new: "selNew", add: "selAdd", sub: "selSub", int: "selInt" }[id]], 16)}</button>`).join("")}</div></span>` : ""}
@@ -3653,6 +3672,8 @@ export function mount(root) {
       case "snap": return toggleSnap();
       case "rmbg": return removeBackground();
       case "bgmenu": return openBgMenu(b);
+      case "upscale": return upscaler.start();
+      case "upmenu": return upscaler.openMenu(b);
       case "refine": return setTool("mask");
       case "edge": return openEdge(b);
       case "backdrop": return openBackdrop(b);
@@ -3871,16 +3892,17 @@ export function mount(root) {
   // Resize image is smart: every layer keeps its source and only its matrix is scaled (it's
   // resampled from the source when drawn), so going back up to the old size is exact. Text is
   // redrawn at the new font size (sharp) when the scale is even.
-  function resizeImage(w, hh) {
-    if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return; }
+  // `tweak(layer)` (Upscale) runs after a layer's matrix is scaled and may swap its pixels for a bigger copy.
+  function resizeImage(w, hh, tweak, label = "Resize image") {
+    if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return false; }
     const sx = w / doc.w, sy = hh / doc.h, even = Math.abs(sx - sy) < 1e-9;
-    record("Resize image", () => {
+    record(label, () => {
       for (const l of doc.layers) {
         if (l.kind === "text" && even && l.text.size * sy >= 1) {
           l.text = { ...l.text, size: l.text.size * sy };
           renderText(l);
           setLm(l, [...lin(l), l.x * sx, l.y * sy]);
-        } else compose(l, S(sx, sy));
+        } else { compose(l, S(sx, sy)); tweak?.(l); }
       }
       // the crop's whole picture scales too (a straightened crop can only follow an even scale)
       const c = doc.crop;
@@ -3892,6 +3914,7 @@ export function mount(root) {
     selection = null;
     keepCentre(w / sx, hh / sy, w, hh);
     invalidate(true);
+    return true;
   }
   function resizeCanvas(w, hh) {
     if (tooBig(w, hh)) { toast(tooBigMsg(w, hh), { bad: true }); return; }
@@ -4881,6 +4904,7 @@ export function mount(root) {
   kb("keepRemove", "X", "Background remover", "Keep ↔ Remove", () => { maskBrush.mode = maskBrush.mode === "keep" ? "remove" : "keep"; renderProps(); savePrefs(); }, () => tool === "mask", { ctx: "mask" });
   kb("showMask", "\\", "Background remover", "Show mask", () => { if (selLayer()?.mask) setBgView(rb.view === "mask" ? "photo" : "mask"); });
   kb("cancelBg", "Esc", "Background remover", "Cancel", () => cancelBg(), () => !!rb.job, { ctx: "bg" });
+  kb("cancelUp", "Esc", "Upscale", "Cancel", () => upscaler.cancel(), () => upscaler.busy(), { ctx: "bg" });
   // Brush & eraser
   kb("brushSmaller", "[", "Brush & eraser", "Smaller", () => brushKey(false, false), () => isPaint(), { ctx: "paint" });
   kb("brushLarger", "]", "Brush & eraser", "Larger", () => brushKey(true, false), () => isPaint(), { ctx: "paint" });
@@ -5067,7 +5091,7 @@ export function mount(root) {
   addEventListener("quickcut:zoom", () => { checkerPat = null; onResize(); });
   new MutationObserver(() => { checkerPat = null; measure(); invalidate(true); if (doc) drawThumbs(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-  const warmOn = (e) => { if (doc && e.target.closest?.('[data-p="rmbg"], [data-op="bg"], [data-p="refine"]')) warmBg(); };
+  const warmOn = (e) => { if (doc && e.target.closest?.('[data-p="rmbg"], [data-op="bg"], [data-p="refine"]')) warmBg(); else if (doc && e.target.closest?.('[data-p="upscale"]')) upscaler.warm(); };
   root.addEventListener("pointerover", warmOn);
   root.addEventListener("focusin", warmOn);
   const showResume = () => renderResume(resumeBox, "photo", (rec) => resume(rec));
@@ -5083,7 +5107,7 @@ export function mount(root) {
   migrate().finally(showResume);
 
   // test hook: lets an automated check feed files the same way a drop does
-  root._qc = { open: (files) => openFiles(files.map((file) => ({ file }))), openNew: (files) => openFiles(files.map((file) => ({ file })), { asLayers: false }), stats, get doc() { return doc; }, get view() { return view; }, get selection() { return selection; }, ops: layerOps, cycleBlend: (d) => cycleBlend(selNode(), d), select: (id) => { setSel(id); renderLayers(); }, get last() { return ex.blob; }, renderNow: () => { if (raf) cancelAnimationFrame(raf); raf = 0; frame(); },
+  root._qc = { up: upscaler, open: (files) => openFiles(files.map((file) => ({ file }))), openNew: (files) => openFiles(files.map((file) => ({ file })), { asLayers: false }), stats, get doc() { return doc; }, get view() { return view; }, get selection() { return selection; }, ops: layerOps, cycleBlend: (d) => cycleBlend(selNode(), d), select: (id) => { setSel(id); renderLayers(); }, get last() { return ex.blob; }, renderNow: () => { if (raf) cancelAnimationFrame(raf); raf = 0; frame(); },
     get collapsed() { return [...collapsed]; }, toggleCollapsed: (id) => { if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id); renderLayers(); saveSession(); },
     addMask: () => addMask(selLayer()),
     get tool() { return tool; },
@@ -5126,6 +5150,7 @@ export function mount(root) {
     },
     back() {
       if (rb.job) return cancelBg();
+      if (upscaler.busy()) return upscaler.cancel();
       if (editing) { commitText(); return true; }
       if (crop) { cancelCrop(); return true; }
       if (selection) { deselect(); return true; }

@@ -39,3 +39,14 @@ Fonts: Inter and JetBrains Mono, SIL Open Font License 1.1 (shared/fonts/OFL-*.t
 The project-file codec module (shared/qcut-codec.wasm, source in web/qcut-wasm) is QuickCut's own
 code; like every Rust WebAssembly build it contains parts of the Rust standard library
 (https://github.com/rust-lang/rust), licensed under MIT OR Apache-2.0.
+
+Photo upscaler models (models/upscale-*, converted to ONNX; see photo/UPSCALE.md):
+- "Max": SwinIR-L real-world x4 GAN (003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN) by Jingyun Liang,
+  Jiezhang Cao, Guolei Sun, Kai Zhang, Luc Van Gool and Radu Timofte, Apache License 2.0
+  (https://github.com/JingyunLiang/SwinIR). Licensed under the Apache License, Version 2.0; you may
+  obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an
+  "AS IS" basis, without warranties or conditions of any kind.
+- "Fast": 4xLSDIRCompactC3 by Philip Hofmann (https://github.com/Phhofm/models), licensed under
+  Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/); converted to ONNX
+  (float32), otherwise unchanged. Its network (SRVGGNetCompact) is from Real-ESRGAN
+  (https://github.com/xinntao/Real-ESRGAN, BSD 3-Clause License, Copyright (c) 2021 Xintao Wang).

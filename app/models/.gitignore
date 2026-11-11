@@ -4,4 +4,5 @@
 !.gitignore
 !README.md
 !fetch.py
+!export_upscale.py
 !manifest.json

@@ -19,6 +19,10 @@ Upstream (all permissively licensed):
   (BiRefNet-portrait "People" and BiRefNet-DIS "Fine detail" were measured and left out: no better
   than High detail, see ../photo/BG_REMOVER.md.)
   * ONNX Runtime Web 1.31.1 WebAssembly binary (MIT, github.com/microsoft/onnxruntime).
+  * The upscalers (photo/UPSCALE.md): Fast = 4xLSDIRCompactC3 (Philip Hofmann, CC BY 4.0, architecture
+    SRVGGNetCompact from Real-ESRGAN, BSD-3-Clause), Max = SwinIR-L real-world x4 GAN (Apache-2.0 code
+    and weights, github.com/JingyunLiang/SwinIR). PyTorch weights -> ONNX in export_upscale.py (needs
+    `pip install torch spandrel onnx onnxruntime onnxconverter-common`).
 
 Preparation of the model (deterministic):
   1. Split/Concat nodes with more than 8 outputs/inputs are rewritten as small trees: WebGPU lets a
@@ -77,6 +81,22 @@ SOURCES = {
         "sum_to_add": True,
         "prepared_sha256": "235d5b2f45b96848d350d63168f4efe23f7b6668cc853e200f84fdd5b66356f0",
     },
+    # upscalers: weights are downloaded, checked, then exported to ONNX (export_upscale.py); "tile" is the
+    # fixed input size of the exported graph (the worker feeds exactly tile x tile), "overlap" the tile overlap
+    "upscale-fast": {
+        "url": "https://github.com/Phhofm/models/releases/download/4xLSDIRCompact3/4xLSDIRCompactC3.safetensors",
+        "sha256": "8828f49814650bf2a3fe3f347b126323e9e2f2b35eaff5d9bdb0a3e6f16fbd18",
+        "out": "upscale-fast/model.onnx",
+        "export": {"tile": 128, "fp16": False},
+        "prepared_sha256": "98c750b09ed236d3d4a45fa11a4afdc81485a8dad779e3bc75720ea1f4489d95",  # torch 2.11, onnx 1.23, onnxruntime 1.23
+    },
+    "upscale-max": {
+        "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
+        "sha256": "99adfa91350a84c99e946c1eb3d8fce34bc28f57d807b09dc8fe40a316328c0a",
+        "out": "upscale-max/model_f16.onnx",
+        "export": {"tile": 128, "fp16": True},
+        "prepared_sha256": "15c419eb5c5124280f97b11ee1f7c2de0cdd024a4f5af042dadb5cf1ab924f42",
+    },
 }
 MODELS = {
     "birefnet-512": {"file": "birefnet-512", "name": "BiRefNet 512 (4-bit)", "license": "MIT", "input": 512},
@@ -84,6 +104,14 @@ MODELS = {
     # "tiles": False = no extra tile pass for "High detail" (the model already sees 1024²)
     "birefnet-1024": {"file": "birefnet-1024", "name": "BiRefNet 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
     "birefnet-matting-1024": {"file": "birefnet-matting-1024", "name": "BiRefNet matting 1024 (4-bit)", "license": "MIT", "input": 1024, "gpu": True, "tiles": False},
+}
+UPSCALE = {
+    "default": "fast",
+    # "gpu": needs WebGPU with 16-bit floats; the worker (upscale.js) reads tile / overlap / scale
+    "models": {
+        "fast": {"file": "upscale-fast", "name": "4xLSDIRCompactC3", "license": "CC BY 4.0", "scale": 4, "tile": 128, "overlap": 16},
+        "max": {"file": "upscale-max", "name": "SwinIR-L real-world x4 (GAN)", "license": "Apache-2.0", "scale": 4, "tile": 128, "overlap": 16, "gpu": True},
+    },
 }
 # small runtime files that live in the repo (vendor/ort); checked here so a version mismatch shows
 VENDOR = {
@@ -239,7 +267,19 @@ def main():
             if h.hexdigest() == o["sha256"]:
                 files[key] = o  # already prepared and split
                 continue
-        if s.get("prepare"):
+        if s.get("export"):
+            raw = os.path.join(tmpdir, key + os.path.splitext(s["url"])[1])
+            if not os.path.exists(out):
+                download(s["url"], raw, s["sha256"])
+                print("export", key)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                from export_upscale import export
+                export(raw, out, s["export"]["tile"], s["export"]["fp16"])
+                os.remove(raw)
+            got = sha(out)
+            if s["prepared_sha256"] and got != s["prepared_sha256"]:
+                print(f"note: {key} prepared SHA-256 is {got} (expected {s['prepared_sha256']}); the manifest uses the new one")
+        elif s.get("prepare"):
             raw = os.path.join(tmpdir, key + ".onnx")
             if not os.path.exists(out):
                 download(s["url"], raw, s["sha256"])
@@ -286,6 +326,7 @@ def main():
         "default": "birefnet-512",
         "files": files,
         "models": MODELS,
+        "upscale": UPSCALE,
     }
     with open(os.path.join(HERE, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)

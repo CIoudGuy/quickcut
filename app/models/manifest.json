@@ -62,6 +62,25 @@
     "birefnet-matting-1024/model_q4.onnx.008",
     "birefnet-matting-1024/model_q4.onnx.009"
    ]
+  },
+  "upscale-fast": {
+   "file": "upscale-fast/model.onnx",
+   "size": 2492983,
+   "sha256": "98c750b09ed236d3d4a45fa11a4afdc81485a8dad779e3bc75720ea1f4489d95",
+   "parts": [
+    "upscale-fast/model.onnx.000"
+   ]
+  },
+  "upscale-max": {
+   "file": "upscale-max/model_f16.onnx",
+   "size": 64244124,
+   "sha256": "15c419eb5c5124280f97b11ee1f7c2de0cdd024a4f5af042dadb5cf1ab924f42",
+   "parts": [
+    "upscale-max\\model_f16.onnx.000",
+    "upscale-max\\model_f16.onnx.001",
+    "upscale-max\\model_f16.onnx.002",
+    "upscale-max\\model_f16.onnx.003"
+   ]
   }
  },
  "models": {
@@ -86,6 +105,28 @@
    "input": 1024,
    "gpu": true,
    "tiles": false
+  }
+ },
+ "upscale": {
+  "default": "fast",
+  "models": {
+   "fast": {
+    "file": "upscale-fast",
+    "name": "4xLSDIRCompactC3",
+    "license": "CC BY 4.0",
+    "scale": 4,
+    "tile": 128,
+    "overlap": 16
+   },
+   "max": {
+    "file": "upscale-max",
+    "name": "SwinIR-L real-world x4 (GAN)",
+    "license": "Apache-2.0",
+    "scale": 4,
+    "tile": 128,
+    "overlap": 16,
+    "gpu": true
+   }
   }
  }
 }

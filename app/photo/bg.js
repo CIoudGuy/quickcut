@@ -153,7 +153,11 @@ async function remove({ models: ids }) {
   for (const id of drop) await del(mf.files[mf.models[id].file]);
   const left = [];
   for (const id of all) if (!drop.has(id) && (await isCached(mf.files[mf.models[id].file]))) left.push(id);
-  if (!left.length) {
+  // the runtime and the rest go only when no other tool's model (e.g. the upscaler) is still on the device
+  const mine = new Set([mf.runtime, ...all.map((id) => mf.models[id].file)]);
+  let others = false;
+  for (const [k, f] of Object.entries(mf.files)) if (!mine.has(k) && (await isCached(f))) { others = true; break; }
+  if (!left.length && !others) {
     await del(mf.files[mf.runtime]);
     for (const req of await cache.keys()) if (req.url.startsWith(MODELS)) await cache.delete(req); // anything else of ours
   }
