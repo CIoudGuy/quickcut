@@ -13,6 +13,17 @@ checks their SHA-256, prepares the models and writes them here in parts of at mo
 | `birefnet-dis-1024/model_q4.onnx.*` | 208 MB | Fine detail (optional download, needs WebGPU) | MIT | BiRefNet-DIS 1024×1024 (trained on DIS5K: trees, bikes, chairs, fences), ONNX file `BiRefNet-DIS-epoch_590.onnx` of the same release (model page [ZhengPeng7/BiRefNet-DIS5K](https://huggingface.co/ZhengPeng7/BiRefNet-DIS5K) @ `343602b`, MIT) |
 | `ort/ort-wasm-simd-threaded.asyncify.wasm.*` | 29 MB | all | MIT | ONNX Runtime Web 1.31.1 ([microsoft/onnxruntime](https://github.com/microsoft/onnxruntime)) |
 
+| File | Size | Used for | Licence | Source |
+|---|---|---|---|---|
+| `upscale-fast/model.onnx.*` | 2.5 MB | Upscale, Fast (any device) | CC BY 4.0 | 4xLSDIRCompactC3 by Philip Hofmann ([Phhofm/models](https://github.com/Phhofm/models/releases/tag/4xLSDIRCompact3)), network SRVGGNetCompact ([Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN), BSD-3-Clause), float32, 128×128 tiles |
+| `upscale-max/model_f16.onnx.*` | 64 MB | Upscale, Max (optional download, needs WebGPU with 16-bit floats) | Apache-2.0 | SwinIR-L real-world ×4 GAN ([JingyunLiang/SwinIR](https://github.com/JingyunLiang/SwinIR), release `v0.0`), float16 inside, 128×128 tiles |
+
+The upscalers are exported from their PyTorch weights by `export_upscale.py` (needs `torch spandrel onnx
+onnxruntime onnxconverter-common`): ONNX opset 17 with a fixed tile size, ONNX Runtime's basic graph
+optimisation (folds the window-attention shape arithmetic away), duplicate constants removed (the
+shifted-window masks), SwinIR-L then converted to float16. They are cached in their own Cache Storage
+(`quickcut-upscale-v1`). See `../photo/UPSCALE.md`.
+
 All models are prepared the same way (wide Split/Concat rewritten for WebGPU, the deformable
 convolutions' Sum nodes rewritten as Adds so they stay on the GPU, MatMul weights 4-bit; the
 matting, portrait and DIS models are converted from fp32 to fp16 first). Details in `fetch.py`.
