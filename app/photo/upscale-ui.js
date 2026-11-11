@@ -1,7 +1,7 @@
 // QuickCut Photo: the Upscale action (UI side). The AI itself runs in upscale.js (a Worker); this file
 // is its panel in the Size dialog (Fast / Max, scale), the progress card and how the result goes into the document.
 // photo.js hands in what it owns (document, undo, worker calls, popups) as `a`; see UPSCALE.md.
-import { icon, h, esc, toast } from "../shared/ui.js";
+import { icon, h, esc, toast, syncSlider } from "../shared/ui.js";
 
 const IC = "M2.5 7.5h6v6h-6zM7 9l6.5-6.5M9.5 2.5h4v4"; // a small square growing into a big one
 // Fast: small, any device. Natural: stays closest to the picture. Max: the sharpest, adds the most texture of its own.
@@ -105,6 +105,7 @@ export function createUpscale(a) {
     const el = h(`<div class="ph-up" hidden>${qualityHtml()}${scaleHtml()}
       <label class="field-label"><span class="row-between">Strength<span class="v" data-v="upst">${strength()}%</span></span><input class="slider" type="range" min="10" max="100" step="5" value="${strength()}" data-ust aria-label="Strength"></label>
       ${epHtml()}<button class="btn-p big" type="button" data-b="go"></button></div>`);
+    syncSlider(el.querySelector("[data-ust]")); // the filled part of the track follows the value from the start
     el.querySelector("[data-ust]").addEventListener("input", (e) => { store.set("upst", e.target.value); el.querySelector('[data-v="upst"]').textContent = `${strength()}%`; });
     const goBtn = el.querySelector('[data-b="go"]');
     const label = () => {
@@ -118,16 +119,20 @@ export function createUpscale(a) {
     let loaded = false;
     /** Called when the panel is shown: what is downloaded, what this device can run. */
     const show = async () => {
-      warm();
-      if (loaded) return;
-      loaded = true;
-      try { await status(); } catch { loaded = false; return; }
-      if (!el.isConnected) return;
-      el.querySelector(".ph-q").outerHTML = qualityHtml();
-      el.querySelector("[data-us]").closest(".field-label").outerHTML = scaleHtml();
-      el.querySelector("[data-uep]").closest(".field-label").outerHTML = epHtml();
-      goBtn.before(storedRows(el));
-      label();
+      if (!loaded) {
+        // sizes and downloaded models first; starting the AI ahead of the click comes after (the worker
+        // answers in order, and loading a model takes seconds)
+        loaded = true;
+        try { await status(); } catch { loaded = false; }
+        if (loaded && el.isConnected) {
+          el.querySelector(".ph-q").outerHTML = qualityHtml();
+          el.querySelector("[data-us]").closest(".field-label").outerHTML = scaleHtml();
+          el.querySelector("[data-uep]").closest(".field-label").outerHTML = epHtml();
+          goBtn.before(storedRows(el));
+          label();
+        }
+      }
+      if (el.isConnected) warm();
     };
     return { el, show, go };
   }

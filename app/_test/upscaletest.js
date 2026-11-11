@@ -53,6 +53,7 @@ export async function run() {
   ok("start size", doc().w === 160 && doc().h === 120, `${doc().w}x${doc().h}`);
   // Upscale lives in the Size dialog (top bar), next to Resize and Canvas
   ok("no Upscale button in the Move bar", !v.querySelector('[data-p="upscale"]'));
+  localStorage.removeItem("quickcut.photo.sizemode");
   v.querySelector('[data-a="resize"]').click(); await wait(300);
   {
     const dlg = document.querySelector('.ph-pop[aria-label="Size"]');
@@ -64,6 +65,22 @@ export async function run() {
     dlg?.querySelector('[data-m="image"]').click(); await wait(100);
     ok("back to Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
     dlg?.querySelector('[data-r="close"]').click(); await wait(200);
+  }
+  // the dialog opens where it was last used
+  {
+    const open = async () => { v.querySelector('[data-a="resize"]').click(); await wait(300); return document.querySelector('.ph-pop[aria-label="Size"]'); };
+    const cur = (d) => d.querySelector('[data-m][aria-checked="true"]')?.dataset.m;
+    let d = await open();
+    d.querySelector('[data-m="up"]').click(); await wait(150);
+    d.querySelector('[data-r="close"]').click(); await wait(250);
+    d = await open();
+    ok("reopens on Upscale after Upscale was used", cur(d) === "up" && !d.querySelector(".ph-up").hidden && d.querySelector(".ph-rs").hidden, cur(d));
+    d.querySelector('[data-m="canvas"]').click(); await wait(100);
+    d.querySelector('[data-r="close"]').click(); await wait(250);
+    d = await open();
+    ok("reopens on Canvas after Canvas was used", cur(d) === "canvas" && !d.querySelector(".ph-rs").hidden, cur(d));
+    d.querySelector('[data-m="image"]').click(); await wait(100);
+    d.querySelector('[data-r="close"]').click(); await wait(250);
   }
   ok("Fast ×2 finishes", await upscale("fast", 2, 300000));
   ok("document is 2× bigger", doc().w === 320 && doc().h === 240, `${doc().w}x${doc().h}`);
@@ -166,6 +183,7 @@ export async function run() {
     const dlg = document.querySelector('.ph-pop[aria-label="Size"]');
     dlg.querySelector('[data-m="up"]').click(); await wait(200);
     ok("Strength slider in the Upscale options", !!dlg.querySelector(".ph-up [data-ust]") && dlg.querySelector('.ph-up [data-v="upst"]').textContent === "100%", dlg.querySelector('.ph-up [data-v="upst"]')?.textContent);
+    ok("Strength slider: the filled track matches the value", getComputedStyle(dlg.querySelector(".ph-up [data-ust]")).getPropertyValue("--p").trim() === "100%", getComputedStyle(dlg.querySelector(".ph-up [data-ust]")).getPropertyValue("--p"));
     dlg.querySelector('[data-r="close"]').click(); await wait(200);
   }
 

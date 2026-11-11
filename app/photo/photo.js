@@ -3937,7 +3937,10 @@ export function mount(root) {
     commitText();
     // one dialog for the picture's size: Resize (every layer, resampled), Canvas (the frame only) and
     // Upscale (the AI gives the selected layer more pixels; its panel is upscale-ui.js)
-    const st = { mode: "image", w: doc.w, h: doc.h, lock: true };
+    // (it opens where it was last used: Resize, Canvas or Upscale)
+    let last = "image";
+    try { const m = localStorage.getItem("quickcut.photo.sizemode"); if (m === "canvas" || m === "up") last = m; } catch {}
+    const st = { mode: last, w: doc.w, h: doc.h, lock: true };
     const el = h(`<section class="ph-pop" role="dialog" aria-label="Size">
       <div class="pop-head"><span class="pop-title">Size<span class="pop-sub">Now ${doc.w} × ${doc.h} px</span></span><button class="ib" type="button" data-r="close" aria-label="Close (Esc)">${icon("x")}</button></div>
       <div class="seg fill" role="radiogroup" aria-label="How"><button type="button" role="radio" data-m="image" aria-checked="true">Resize</button><button type="button" role="radio" data-m="canvas" aria-checked="false">Canvas</button><button type="button" role="radio" data-m="up" aria-checked="false">Upscale</button></div>
@@ -3981,7 +3984,7 @@ export function mount(root) {
     el.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
-      if (b.dataset.m) { st.mode = b.dataset.m; sync(); }
+      if (b.dataset.m) { st.mode = b.dataset.m; try { localStorage.setItem("quickcut.photo.sizemode", st.mode); } catch {} sync(); }
       if (b.dataset.r === "lock") { st.lock = !st.lock; if (st.lock) st.h = (st.w * doc.h) / doc.w; sync(); }
       if (b.dataset.r === "apply") apply();
       if (b.dataset.r === "close") resizeLay?.close();
