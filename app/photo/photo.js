@@ -2057,19 +2057,37 @@ export function mount(root) {
     const back = (o) => { for (let r = 0; r < rr.h; r++) base.set(o.subarray(r * rr.w, (r + 1) * rr.w), (rr.y + r) * W + rr.x); };
     const beforeBase = grab(), beforeMask = region(mask, rr);
     const sw = x1 - x0, sd = buf.getContext("2d").getImageData(x0 - r0.x, y0 - r0.y, sw, y1 - y0).data;
+    // Keep paints the photo back. After the background remover the layer shows a copy whose edge
+    // colours were cleaned for the cut-out (bgFixed); a kept pixel there moves towards the photo's
+    // own colour by the stroke's strength, as if the photo were painted over the cut-out
+    // (premultiplied: P += s·(I − P)). Without this, restored areas show the cleaned colours.
+    const fixed = !remove && l.preBg && l.bgFixed && l.bgFixed.width === W && l.bgFixed.height === H ? l.bgFixed : null;
+    const rc = { x: x0, y: y0, w: sw, h: y1 - y0 };
+    const fImg = fixed ? fixed.getContext("2d").getImageData(x0, y0, rc.w, rc.h) : null, fd = fImg?.data;
+    const pd = fixed ? l.preBg.getContext("2d").getImageData(x0, y0, rc.w, rc.h).data : null;
+    let recol = false;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-      const s = (sd[((y - y0) * sw + (x - x0)) * 4 + 3] / 255) * alpha;
+      const o = ((y - y0) * sw + (x - x0)) * 4, s = (sd[o + 3] / 255) * alpha;
       if (!s) continue;
       const i = y * W + x, b = base[i];
       base[i] = Math.round(remove ? b * (1 - s) : b + (255 - b) * s);
+      if (fd && (fd[o] !== pd[o] || fd[o + 1] !== pd[o + 1] || fd[o + 2] !== pd[o + 2])) {
+        const m0 = b / 255, m1 = m0 + (1 - m0) * s;
+        for (let ch = 0; ch < 3; ch++) { const p0 = fd[o + ch] * m0; fd[o + ch] = Math.round((p0 + s * (pd[o + ch] - p0)) / m1); }
+        recol = true;
+      }
     }
+    const beforeFix = recol ? region(fixed, rc) : null;
+    if (recol) { fixed.getContext("2d").putImageData(fImg, x0, y0); bump(fixed); pyrUpdate(fixed, rc); }
+    const afterFix = recol ? region(fixed, rc) : null;
     rederiveRect(mask, base, shift, soft, rr);
     const afterBase = grab(), afterMask = region(mask, rr);
     bump(mask); pyrUpdate(mask, rr); bump(base);
+    const fix = (part) => { if (recol) { put(fixed, rc, part); bump(fixed); pyrUpdate(fixed, rc); } };
     push({
-      label: remove ? "Remove (mask)" : "Keep (mask)", bytes: rr.w * rr.h * 10,
-      undo: () => { back(beforeBase); put(mask, rr, beforeMask); bump(base); },
-      redo: () => { back(afterBase); put(mask, rr, afterMask); bump(base); },
+      label: remove ? "Remove (mask)" : "Keep (mask)", bytes: rr.w * rr.h * 10 + (recol ? rc.w * rc.h * 8 : 0),
+      undo: () => { back(beforeBase); put(mask, rr, beforeMask); bump(base); fix(beforeFix); },
+      redo: () => { back(afterBase); put(mask, rr, afterMask); bump(base); fix(afterFix); },
     });
     changed();
   }
