@@ -1,7 +1,7 @@
 // QuickCut Photo: the Upscale action (UI side). The AI itself runs in upscale.js (a Worker); this file
-// is the button, the Fast / Max picker, the progress card and how the result goes into the document.
+// is its panel in the Size dialog (Fast / Max, scale), the progress card and how the result goes into the document.
 // photo.js hands in what it owns (document, undo, worker calls, popups) as `a`; see UPSCALE.md.
-import { icon, h, esc, openLayer, toast } from "../shared/ui.js";
+import { icon, h, esc, toast } from "../shared/ui.js";
 
 const IC = "M2.5 7.5h6v6h-6zM7 9l6.5-6.5M9.5 2.5h4v4"; // a small square growing into a big one
 const QUALITIES = [["fast", "Fast"], ["max", "Max"]];
@@ -19,9 +19,6 @@ export function createUpscale(a) {
   /** Where the AI runs: shared with the background remover's choice (GPU unless the user picked CPU). */
   const ep = () => { try { return new URLSearchParams(location.search).get("bgep") || (localStorage.getItem("quickcut.photo.bgep") === "wasm" ? "wasm" : "auto"); } catch { return "auto"; } };
   const imageLayer = (l) => l && !l.group && l.kind !== "text";
-
-  /** The Upscale button (with the arrow that opens the picker) for the Move bar. */
-  const button = () => `<span class="ph-split"><button class="btn-2" type="button" data-p="upscale" title="Upscale">${icon(IC)}Upscale</button><button class="btn-2 ph-caret" type="button" data-p="upmenu" aria-haspopup="dialog" aria-label="Upscale options" title="Upscale options">${icon("chev")}</button></span>`;
 
   async function status(model = quality()) { st.info = await a.call("up", { op: "status", model }); return st.info; }
 
@@ -99,27 +96,10 @@ export function createUpscale(a) {
       onChange?.();
     });
   }
-  /** The arrow next to Upscale. */
-  async function openMenu(anchor) {
-    const el = h(`<section class="ph-pop ph-bgmenu" role="dialog" aria-label="Upscale">${qualityHtml()}${scaleHtml()}${epHtml()}</section>`);
-    bindPicker(el);
-    const L = openLayer(el, { anchor, width: 300, reopen: false });
-    try { await status(); } catch { return; }
-    if (!el.isConnected) return;
-    el.querySelector(".ph-q").outerHTML = qualityHtml();
-    el.querySelector('[data-us]').closest(".field-label").outerHTML = scaleHtml();
-    el.querySelector('[data-uep]').closest(".field-label").outerHTML = epHtml();
-    el.append(storedRows(el));
-    return L;
-  }
-  /** First use of a model: what it costs to download, then go. */
-  function askDownload(go) {
-    const el = h(`<section class="ph-pop ph-bgask" role="dialog" aria-label="Upscale">
-      <div class="pop-head"><span class="pop-title">Upscale</span><button class="ib" type="button" data-b="close" aria-label="Close">${icon("x")}</button></div>
-      ${qualityHtml()}${scaleHtml()}
-      <button class="btn-p big" type="button" data-b="go" autofocus></button>
-      <button class="btn-g big" type="button" data-b="close">Not now</button>
-    </section>`);
+  /** The Upscale side of the Size dialog (photo.js puts it next to Resize): quality, scale, where the
+   *  AI runs, downloaded models and the button. `close` closes the dialog. */
+  function panel(close) {
+    const el = h(`<div class="ph-up" hidden>${qualityHtml()}${scaleHtml()}${epHtml()}<button class="btn-p big" type="button" data-b="go"></button></div>`);
     const goBtn = el.querySelector('[data-b="go"]');
     const label = () => {
       const m = st.info?.models?.[pickQuality()];
@@ -127,11 +107,23 @@ export function createUpscale(a) {
     };
     label();
     bindPicker(el, label);
-    const L = openLayer(el, { center: true, width: 380, reopen: false });
-    const goNow = () => { L.close(); try { navigator.storage?.persist?.().catch(() => {}); } catch {} go(); };
-    el.addEventListener("click", (e) => { const b = e.target.closest("[data-b]"); if (!b) return; if (b.dataset.b === "go") goNow(); else L.close(); });
-    el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); goNow(); } });
-    requestAnimationFrame(() => goBtn.focus());
+    const go = () => { close(); try { navigator.storage?.persist?.().catch(() => {}); } catch {} start(); };
+    goBtn.onclick = go;
+    let loaded = false;
+    /** Called when the panel is shown: what is downloaded, what this device can run. */
+    const show = async () => {
+      warm();
+      if (loaded) return;
+      loaded = true;
+      try { await status(); } catch { loaded = false; return; }
+      if (!el.isConnected) return;
+      el.querySelector(".ph-q").outerHTML = qualityHtml();
+      el.querySelector("[data-us]").closest(".field-label").outerHTML = scaleHtml();
+      el.querySelector("[data-uep]").closest(".field-label").outerHTML = epHtml();
+      goBtn.before(storedRows(el));
+      label();
+    };
+    return { el, show, go };
   }
 
   // ── progress card (same look as the background remover's) ────────────────
@@ -169,7 +161,7 @@ export function createUpscale(a) {
     if (st.job || st.warm) return;
     st.warm = a.call("up", { op: "warm", model: pickQuality(), ep: ep() }).catch(() => null).finally(() => { st.warm = null; });
   }
-  async function start({ agreed = false } = {}) {
+  async function start() {
     const l = a.selLayer();
     if (!imageLayer(l)) { toast("Pick a photo layer", { bad: true }); return; }
     if (st.job) return;
@@ -184,7 +176,6 @@ export function createUpscale(a) {
     const q = pickQuality();
     let s = scale();
     if (!fits(l, s)) { const alt = SCALES.filter((x) => x < s && fits(l, x)).pop(); if (!alt) { end(); toast(a.tooBigMsg(l.canvas.width * 2, l.canvas.height * 2), { bad: true }); return; } s = alt; }
-    if (info.models[q]?.bytes && !agreed) { end(); askDownload(() => start({ agreed: true })); return; }
     work(l, q, s, job);
   }
   async function work(l, q, s, job) {
@@ -258,5 +249,5 @@ export function createUpscale(a) {
       toast(`Couldn't upscale: ${e.message}`, { bad: true });
     }
   }
-  return { button, start, openMenu, warm, cancel, busy, status: () => status(), get stats() { return st.stats; } };
+  return { panel, start, warm, cancel, busy, status: () => status(), get stats() { return st.stats; } };
 }

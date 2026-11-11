@@ -146,6 +146,9 @@ html.ly-dragging, html.ly-dragging * { cursor: grabbing !important; user-select:
 .ph-pop .pop-head .ib { margin: -4px -8px 0 0; }
 .ph-pop .row-between .v { font: 400 12px var(--mono); color: var(--tx-1); }
 .ph-pop .slider { width: 100%; }
+/* Size dialog: the Resize fields and the Upscale panel are laid out as the dialog's own rows */
+.ph-rs, .ph-up { display: contents; }
+.ph-rs[hidden], .ph-up[hidden] { display: none; }
 .ph-pop .wh { display: flex; align-items: center; gap: 6px; }
 .ph-pop .wh .field { flex: 1; min-width: 0; }
 .ph-pop .wh .field input { width: 100%; }

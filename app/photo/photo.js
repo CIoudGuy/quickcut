@@ -113,7 +113,7 @@ export function mount(root) {
       <button class="ib" type="button" data-a="redo" data-kact="redo" aria-label="Redo" title="Redo">${icon("redo")}</button>
       <span class="sep"></span>
       <span class="file"><span class="n"></span><span class="m"></span></span>
-      <button class="btn-g desk-only" type="button" data-a="resize" aria-haspopup="dialog" aria-expanded="false">${icon("resize")}Resize</button>
+      <button class="btn-g" type="button" data-a="resize" aria-haspopup="dialog" aria-expanded="false" aria-label="Size" title="Size">${icon("resize")}<span class="desk-only">Size</span></button>
       <button class="btn-g phone-only" type="button" data-a="crop-cancel" hidden>Cancel</button>
       <button class="btn-p phone-only" type="button" data-a="crop-apply" hidden>Apply</button>
       <button class="btn-p exp" type="button" data-a="export" aria-haspopup="dialog" aria-expanded="false">${icon("exp")}Export<span class="kbd desk-only" data-kact="export"></span></button>
@@ -3572,7 +3572,7 @@ export function mount(root) {
       html = l ? `<span class="grp"><span class="lname">${l.group ? `<span class="lthumb fd">${icon("folder", 16)}</span>` : l.kind === "text" ? `<span class="tg lthumb" style="display:inline-flex;align-items:center;justify-content:center;background:#3A3A3E;color:#fff;font:600 11px var(--font)">T</span>` : `<canvas class="lthumb"></canvas>`}<span>${l.kind === "text" && !l.named ? "Text layer" : esc(l.name)}</span></span></span>
         <span class="grp">${snapBtn()}</span>
         ${!l.group && !plain(l) ? `<span class="grp" role="group" aria-label="Transform">${tfLabel(l)}<button class="btn-g" type="button" data-p="tfreset" title="Reset transform">Reset</button><button class="btn-g" type="button" data-p="raster" title="Rasterize">Rasterize</button></span>` : ""}
-        ${l.kind && l.kind !== "text" ? `<span class="grp end">${upscaler.button()}${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}</span>` : ""}`
+        ${l.kind && l.kind !== "text" ? `<span class="grp end">${l.mask ? `<button class="btn-2" type="button" data-p="refine" title="${K.tip("Refine mask", "mask")}">${icon(PI.mask)}Refine mask</button>` : `<span class="ph-split"><button class="btn-2" type="button" data-p="rmbg" title="${K.tip("Remove background", "removeBg")}">${icon(PI.cutout)}Remove background</button><button class="btn-2 ph-caret" type="button" data-p="bgmenu" aria-haspopup="dialog" aria-label="AI model" title="AI model">${icon("chev")}</button></span>`}</span>` : ""}`
         : "";
     } else if (mode === "select") {
       html = `${noMods() ? `<span class="grp"><div class="seg ph-selmode" role="radiogroup" aria-label="Selection mode">${SEL_OPS.map(([id, label]) => `<button type="button" role="radio" data-sm="${id}" aria-checked="${selMode === id}" aria-label="${label}" title="${label}">${icon(PI[{ new: "selNew", add: "selAdd", sub: "selSub", int: "selInt" }[id]], 16)}</button>`).join("")}</div></span>` : ""}
@@ -3672,8 +3672,6 @@ export function mount(root) {
       case "snap": return toggleSnap();
       case "rmbg": return removeBackground();
       case "bgmenu": return openBgMenu(b);
-      case "upscale": return upscaler.start();
-      case "upmenu": return upscaler.openMenu(b);
       case "refine": return setTool("mask");
       case "edge": return openEdge(b);
       case "backdrop": return openBackdrop(b);
@@ -3937,16 +3935,22 @@ export function mount(root) {
     if (!doc || crop) return;
     if (resizeLay) { resizeLay.close(); return; }
     commitText();
+    // one dialog for the picture's size: Resize (every layer, resampled), Canvas (the frame only) and
+    // Upscale (the AI gives the selected layer more pixels; its panel is upscale-ui.js)
     const st = { mode: "image", w: doc.w, h: doc.h, lock: true };
-    const el = h(`<section class="ph-pop" role="dialog" aria-label="Resize">
-      <div class="pop-head"><span class="pop-title">Resize<span class="pop-sub">Now ${doc.w} × ${doc.h} px</span></span><button class="ib" type="button" data-r="close" aria-label="Close (Esc)">${icon("x")}</button></div>
-      <div class="seg fill" role="radiogroup" aria-label="What to resize"><button type="button" role="radio" data-m="image" aria-checked="true">Image</button><button type="button" role="radio" data-m="canvas" aria-checked="false">Canvas size</button></div>
+    const el = h(`<section class="ph-pop" role="dialog" aria-label="Size">
+      <div class="pop-head"><span class="pop-title">Size<span class="pop-sub">Now ${doc.w} × ${doc.h} px</span></span><button class="ib" type="button" data-r="close" aria-label="Close (Esc)">${icon("x")}</button></div>
+      <div class="seg fill" role="radiogroup" aria-label="How"><button type="button" role="radio" data-m="image" aria-checked="true">Resize</button><button type="button" role="radio" data-m="canvas" aria-checked="false">Canvas</button><button type="button" role="radio" data-m="up" aria-checked="false">Upscale</button></div>
+      <div class="ph-rs">
       <div class="wh"><label class="field"><span class="unit">W</span><input type="text" inputmode="numeric" data-r="w" aria-label="Width"><span class="unit">px</span></label>
         <button class="ib" type="button" data-r="lock" aria-pressed="true" aria-label="Keep aspect ratio" title="Keep aspect ratio">${icon("link")}</button>
         <label class="field"><span class="unit">H</span><input type="text" inputmode="numeric" data-r="h" aria-label="Height"><span class="unit">px</span></label></div>
       <label class="field"><input type="text" inputmode="decimal" data-r="pct" aria-label="Percent"><span class="unit">%</span></label>
       <button class="btn-p big" type="button" data-r="apply" autofocus>Apply<span class="kbd">↵</span></button>
+      </div>
     </section>`);
+    const up = upscaler.panel(() => resizeLay?.close());
+    el.append(up.el);
     const f = (n) => el.querySelector(`[data-r="${n}"]`);
     const sync = (except) => {
       if (except !== "w") f("w").value = Math.round(st.w);
@@ -3954,6 +3958,8 @@ export function mount(root) {
       if (except !== "pct") f("pct").value = +((st.w / doc.w) * 100).toFixed(1);
       f("lock").setAttribute("aria-pressed", String(st.lock));
       for (const b of el.querySelectorAll("[data-m]")) b.setAttribute("aria-checked", String(b.dataset.m === st.mode));
+      el.querySelector(".ph-rs").hidden = st.mode === "up";
+      if (up.el.hidden !== (st.mode !== "up")) { up.el.hidden = st.mode !== "up"; if (st.mode === "up") up.show(); }
     };
     sync();
     const num = (v) => Math.round(+String(v).replace(/[^\d.]/g, ""));
@@ -3965,6 +3971,7 @@ export function mount(root) {
       sync(n);
     });
     const apply = () => {
+      if (st.mode === "up") return up.go();
       const w = Math.max(1, Math.round(st.w)), hh = Math.max(1, Math.round(st.h));
       resizeLay?.close();
       if (w === doc.w && hh === doc.h) return;
@@ -4858,7 +4865,7 @@ export function mount(root) {
   kb("paste", "Ctrl+V", "Edit", "Paste", () => pasteKey(false));
   kb("pasteInPlace", "Ctrl+Shift+V", "Edit", "Paste in place", () => pasteKey(true));
   kb("export", "Ctrl+E|Ctrl+Shift+S", "Edit", "Export", () => openExport(), null, { typing: true });
-  kb("resize", "Ctrl+Alt+I", "Edit", "Resize", () => openResize());
+  kb("resize", "Ctrl+Alt+I", "Edit", "Size", () => openResize());
   kb("open", "Ctrl+O", "Edit", "Open", () => choose(false));
   kb("saveProject", "Ctrl+S", "Edit", "Save project", () => saveProject());
   // Layers
@@ -5091,7 +5098,7 @@ export function mount(root) {
   addEventListener("quickcut:zoom", () => { checkerPat = null; onResize(); });
   new MutationObserver(() => { checkerPat = null; measure(); invalidate(true); if (doc) drawThumbs(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-  const warmOn = (e) => { if (doc && e.target.closest?.('[data-p="rmbg"], [data-op="bg"], [data-p="refine"]')) warmBg(); else if (doc && e.target.closest?.('[data-p="upscale"]')) upscaler.warm(); };
+  const warmOn = (e) => { if (doc && e.target.closest?.('[data-p="rmbg"], [data-op="bg"], [data-p="refine"]')) warmBg(); };
   root.addEventListener("pointerover", warmOn);
   root.addEventListener("focusin", warmOn);
   const showResume = () => renderResume(resumeBox, "photo", (rec) => resume(rec));

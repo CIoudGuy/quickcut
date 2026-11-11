@@ -265,7 +265,7 @@ def main():
                 with open(os.path.join(HERE, p), "rb") as f:
                     h.update(f.read())
             if h.hexdigest() == o["sha256"]:
-                files[key] = o  # already prepared and split
+                files[key] = {**o, "parts": [p.replace("\\", "/") for p in o["parts"]]}  # already prepared and split (URLs: forward slashes)
                 continue
         if s.get("export"):
             raw = os.path.join(tmpdir, key + os.path.splitext(s["url"])[1])

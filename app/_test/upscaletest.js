@@ -29,7 +29,10 @@ export async function run() {
     set("upq", quality); set("ups", String(scale));
     const before = doc();
     const w0 = before.w;
-    q.up.start({ agreed: true });
+    v.querySelector('[data-a="resize"]').click(); await wait(250);
+    const dlg = document.querySelector('.ph-pop[aria-label="Size"]');
+    dlg.querySelector('[data-m="up"]').click(); await wait(150);
+    dlg.querySelector('.ph-up [data-b="go"]').click();
     const done = await until(() => doc().w !== w0 && !q.up.busy(), ms);
     return done;
   };
@@ -48,7 +51,20 @@ export async function run() {
   await fresh(160, 120, art);
   const l0 = layer(), cv0 = l0.canvas, M0 = [l0.ta, l0.tb, l0.tc, l0.td, l0.x, l0.y];
   ok("start size", doc().w === 160 && doc().h === 120, `${doc().w}x${doc().h}`);
-  ok("Upscale button in the Move bar", !!v.querySelector('[data-p="upscale"]') && !!v.querySelector('[data-p="upmenu"]'));
+  // Upscale lives in the Size dialog (top bar), next to Resize and Canvas
+  ok("no Upscale button in the Move bar", !v.querySelector('[data-p="upscale"]'));
+  v.querySelector('[data-a="resize"]').click(); await wait(300);
+  {
+    const dlg = document.querySelector('.ph-pop[aria-label="Size"]');
+    ok("Size dialog: Resize, Canvas, Upscale", !!dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|") === "Resize|Canvas|Upscale", dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|"));
+    ok("Size dialog opens on Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
+    dlg?.querySelector('[data-m="up"]').click(); await wait(1500);
+    ok("Upscale: its options replace the resize fields", !!dlg && dlg.querySelector(".ph-rs").hidden && !dlg.querySelector(".ph-up").hidden && dlg.querySelectorAll(".ph-up [data-uq]").length === 2 && dlg.querySelectorAll(".ph-up [data-us]").length === 2);
+    ok("Upscale: one button to start", /upscale/i.test(dlg?.querySelector('.ph-up [data-b="go"]')?.textContent || ""), dlg?.querySelector('.ph-up [data-b="go"]')?.textContent);
+    dlg?.querySelector('[data-m="image"]').click(); await wait(100);
+    ok("back to Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
+    dlg?.querySelector('[data-r="close"]').click(); await wait(200);
+  }
   ok("Fast ×2 finishes", await upscale("fast", 2, 300000));
   ok("document is 2× bigger", doc().w === 320 && doc().h === 240, `${doc().w}x${doc().h}`);
   ok("layer has 2× the pixels", layer().canvas.width === 320 && layer().canvas.height === 240, `${layer().canvas.width}x${layer().canvas.height}`);

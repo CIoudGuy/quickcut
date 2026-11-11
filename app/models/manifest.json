@@ -76,10 +76,10 @@
    "size": 64244124,
    "sha256": "15c419eb5c5124280f97b11ee1f7c2de0cdd024a4f5af042dadb5cf1ab924f42",
    "parts": [
-    "upscale-max\\model_f16.onnx.000",
-    "upscale-max\\model_f16.onnx.001",
-    "upscale-max\\model_f16.onnx.002",
-    "upscale-max\\model_f16.onnx.003"
+    "upscale-max/model_f16.onnx.000",
+    "upscale-max/model_f16.onnx.001",
+    "upscale-max/model_f16.onnx.002",
+    "upscale-max/model_f16.onnx.003"
    ]
   }
  },
