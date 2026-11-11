@@ -59,7 +59,7 @@ export async function run() {
     ok("Size dialog: Resize, Canvas, Upscale", !!dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|") === "Resize|Canvas|Upscale", dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|"));
     ok("Size dialog opens on Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
     dlg?.querySelector('[data-m="up"]').click(); await wait(1500);
-    ok("Upscale: its options replace the resize fields", !!dlg && dlg.querySelector(".ph-rs").hidden && !dlg.querySelector(".ph-up").hidden && dlg.querySelectorAll(".ph-up [data-uq]").length === 2 && dlg.querySelectorAll(".ph-up [data-us]").length === 2);
+    ok("Upscale: its options replace the resize fields", !!dlg && dlg.querySelector(".ph-rs").hidden && !dlg.querySelector(".ph-up").hidden && [...dlg.querySelectorAll(".ph-up [data-uq]")].map((x) => x.dataset.uq).join() === "fast,natural,max" && dlg.querySelectorAll(".ph-up [data-us]").length === 2);
     ok("Upscale: one button to start", /upscale/i.test(dlg?.querySelector('.ph-up [data-b="go"]')?.textContent || ""), dlg?.querySelector('.ph-up [data-b="go"]')?.textContent);
     dlg?.querySelector('[data-m="image"]').click(); await wait(100);
     ok("back to Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
@@ -146,6 +146,29 @@ export async function run() {
     ok("shape stays opaque", a(c.width / 2, c.height / 2) > 247, a(c.width / 2, c.height / 2));
   }
 
+  // ── Strength: below 100 % the plain resize is mixed back in ────────────────
+  {
+    const dist = (c, ref) => { const a = c.getContext("2d").getImageData(0, 0, c.width, c.height).data, b = ref.getContext("2d").getImageData(0, 0, c.width, c.height).data; let t = 0; for (let i = 0; i < a.length; i += 4) t += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); return t / (a.length / 4); };
+    await fresh(96, 96, art, "strength.png");
+    const plain = new OffscreenCanvas(192, 192), pg = plain.getContext("2d");
+    pg.imageSmoothingQuality = "high"; pg.drawImage(layer().canvas, 0, 0, 192, 192);
+    set("upst", "100");
+    ok("strength 100 finishes", await upscale("fast", 2, 300000));
+    const full = dist(layer().canvas, plain);
+    q.undo(); await wait(300);
+    set("upst", "10");
+    ok("strength 10 finishes", await upscale("fast", 2, 300000));
+    const low = dist(layer().canvas, plain);
+    set("upst", "100");
+    out.strength = `${full.toFixed(2)} → ${low.toFixed(2)}`;
+    ok("strength 10 % is much closer to the plain resize", full > 0.5 && low < full * 0.35, out.strength);
+    v.querySelector('[data-a="resize"]').click(); await wait(250);
+    const dlg = document.querySelector('.ph-pop[aria-label="Size"]');
+    dlg.querySelector('[data-m="up"]').click(); await wait(200);
+    ok("Strength slider in the Upscale options", !!dlg.querySelector(".ph-up [data-ust]") && dlg.querySelector('.ph-up [data-v="upst"]').textContent === "100%", dlg.querySelector('.ph-up [data-v="upst"]')?.textContent);
+    dlg.querySelector('[data-r="close"]').click(); await wait(200);
+  }
+
   // ── a layer with a mask ────────────────────────────────────────────────────
   await fresh(100, 80, art, "mask.png");
   {
@@ -198,6 +221,26 @@ export async function run() {
     out.maxMs = q.up.stats?.ms;
     await undo();
     ok("Max undo", doc().w === 120);
+  }
+  // ── Natural (the same needs as Max): runs as itself, and stays closer to the picture than Max
+  const natOk = info?.models?.natural && !info.models.natural.unfit;
+  out.naturalAvailable = !!natOk;
+  if (natOk && maxOk) {
+    const err = (c, ref) => { const a = c.getContext("2d").getImageData(0, 0, c.width, c.height).data, b = ref.getContext("2d").getImageData(0, 0, c.width, c.height).data; let t = 0; for (let i = 0; i < a.length; i += 4) for (let k = 0; k < 3; k++) t += (a[i + k] - b[i + k]) ** 2; return t / (a.length * 0.75); };
+    // a detailed picture, shrunk ×4: the upscaled result is compared with the original
+    const big = new OffscreenCanvas(480, 360), bg = big.getContext("2d");
+    art(bg, 480, 360);
+    for (let i = 0; i < 400; i++) { bg.fillStyle = `hsl(${(i * 47) % 360} 55% ${30 + (i * 13) % 45}%)`; bg.fillRect((i * 73) % 470, (i * 131) % 350, 3 + (i % 9), 2 + (i % 7)); }
+    await fresh(120, 90, (g) => { g.imageSmoothingQuality = "high"; g.drawImage(big, 0, 0, 120, 90); }, "natural.png");
+    ok("Natural ×4 finishes", await upscale("natural", 4, 600000));
+    ok("Natural ran as Natural (not the fallback)", q.up.stats?.quality === "natural" && q.up.stats?.ep === "webgpu", JSON.stringify(q.up.stats));
+    const eNat = err(layer().canvas, big);
+    await undo();
+    ok("Max ×4 on the same picture", await upscale("max", 4, 600000));
+    const eMax = err(layer().canvas, big);
+    await undo();
+    out.naturalVsMax = `${eNat.toFixed(1)} vs ${eMax.toFixed(1)}`;
+    ok("Natural is closer to the original than Max", eNat < eMax, out.naturalVsMax);
   }
   return { pass: !fails.length, fails, out };
 }

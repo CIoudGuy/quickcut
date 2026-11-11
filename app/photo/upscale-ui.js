@@ -4,7 +4,8 @@
 import { icon, h, esc, toast } from "../shared/ui.js";
 
 const IC = "M2.5 7.5h6v6h-6zM7 9l6.5-6.5M9.5 2.5h4v4"; // a small square growing into a big one
-const QUALITIES = [["fast", "Fast"], ["max", "Max"]];
+// Fast: small, any device. Natural: stays closest to the picture. Max: the sharpest, adds the most texture of its own.
+const QUALITIES = [["fast", "Fast"], ["natural", "Natural"], ["max", "Max"]];
 const SCALES = [2, 4];
 const fmtMB = (b) => `${Math.round(b / 1e6)} MB`;
 const store = {
@@ -14,8 +15,10 @@ const store = {
 
 export function createUpscale(a) {
   const st = { job: null, el: null, info: null };
-  const quality = () => (store.get("upq", "fast") === "max" ? "max" : "fast");
+  const quality = () => { const q = store.get("upq", "fast"); return QUALITIES.some((x) => x[0] === q) ? q : "fast"; };
   const scale = () => (store.get("ups", "2") === "4" ? 4 : 2);
+  /** How much of the AI's result is used, 10–100 % (the rest is the plain resize). */
+  const strength = () => { const v = Math.round(+store.get("upst", "100")); return v >= 10 && v <= 100 ? v : 100; };
   /** Where the AI runs: shared with the background remover's choice (GPU unless the user picked CPU). */
   const ep = () => { try { return new URLSearchParams(location.search).get("bgep") || (localStorage.getItem("quickcut.photo.bgep") === "wasm" ? "wasm" : "auto"); } catch { return "auto"; } };
   const imageLayer = (l) => l && !l.group && l.kind !== "text";
@@ -99,7 +102,10 @@ export function createUpscale(a) {
   /** The Upscale side of the Size dialog (photo.js puts it next to Resize): quality, scale, where the
    *  AI runs, downloaded models and the button. `close` closes the dialog. */
   function panel(close) {
-    const el = h(`<div class="ph-up" hidden>${qualityHtml()}${scaleHtml()}${epHtml()}<button class="btn-p big" type="button" data-b="go"></button></div>`);
+    const el = h(`<div class="ph-up" hidden>${qualityHtml()}${scaleHtml()}
+      <label class="field-label"><span class="row-between">Strength<span class="v" data-v="upst">${strength()}%</span></span><input class="slider" type="range" min="10" max="100" step="5" value="${strength()}" data-ust aria-label="Strength"></label>
+      ${epHtml()}<button class="btn-p big" type="button" data-b="go"></button></div>`);
+    el.querySelector("[data-ust]").addEventListener("input", (e) => { store.set("upst", e.target.value); el.querySelector('[data-v="upst"]').textContent = `${strength()}%`; });
     const goBtn = el.querySelector('[data-b="go"]');
     const label = () => {
       const m = st.info?.models?.[pickQuality()];
@@ -195,7 +201,7 @@ export function createUpscale(a) {
         if (job.cancelled) return;
         if (t.model !== "fast" && ini.ep !== "webgpu") throw new Error("GPU unavailable");
         const bmp = await createImageBitmap(src);
-        r = await a.call("up", { op: "run", bitmap: bmp, scale: s }, [bmp], (p) => { if (p.stage === "run") prog(`Upscaling · ${Math.round((p.f || 0) * 100)}%`, p.f ?? null); });
+        r = await a.call("up", { op: "run", bitmap: bmp, scale: s, strength: strength() / 100 }, [bmp], (p) => { if (p.stage === "run") prog(`Upscaling · ${Math.round((p.f || 0) * 100)}%`, p.f ?? null); });
         used = { ...t, ini };
         break;
       } catch (e) {

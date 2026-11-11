@@ -71,6 +71,16 @@
     "upscale-fast/model.onnx.000"
    ]
   },
+  "upscale-natural": {
+   "file": "upscale-natural/model_f16.onnx",
+   "size": 54307790,
+   "sha256": "4981bbf251fb269f132c18dbbf77e46926eb6577acec11f216f8371e120dd187",
+   "parts": [
+    "upscale-natural/model_f16.onnx.000",
+    "upscale-natural/model_f16.onnx.001",
+    "upscale-natural/model_f16.onnx.002"
+   ]
+  },
   "upscale-max": {
    "file": "upscale-max/model_f16.onnx",
    "size": 64244124,
@@ -118,6 +128,15 @@
     "tile": 128,
     "overlap": 16
    },
+   "natural": {
+    "file": "upscale-natural",
+    "name": "4xBHI_dat2_real (DAT-2)",
+    "license": "CC BY 4.0",
+    "scale": 4,
+    "tile": 128,
+    "overlap": 16,
+    "gpu": true
+   },
    "max": {
     "file": "upscale-max",
     "name": "SwinIR-L real-world x4 (GAN)",
@@ -129,4 +148,4 @@
    }
   }
  }
-}
+}

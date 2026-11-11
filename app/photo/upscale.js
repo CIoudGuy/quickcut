@@ -268,7 +268,7 @@ function starts(len, T, ov) {
  * (so the borders get context); each tile's result is blended into the output with a linear ramp
  * across its overlap with the tiles before it.
  */
-async function run({ id, bitmap, scale = 4 }) {
+async function run({ id, bitmap, scale = 4, strength = 1 }) {
   if (!session) throw new Error("not ready");
   const t0 = performance.now(), W = bitmap.width, H = bitmap.height, T = curModel.tile, ov = curModel.overlap, M = curModel.scale || 4;
   const s = scale === 2 ? 2 : 4, k = M / s; // k: box-average factor (2 for ×2 from a ×4 network)
@@ -338,6 +338,17 @@ async function run({ id, bitmap, scale = 4 }) {
   const oc = new OffscreenCanvas(OW, OH), og = oc.getContext("2d");
   const STRIP = Math.max(1, Math.floor(8e6 / OW));
   for (let y = 0; y < OH; y += STRIP) { const h = Math.min(STRIP, OH - y); og.putImageData(new ImageData(out.subarray(y * OW * 4, (y + h) * OW * 4), OW, h), 0, y); }
+  if (strength < 1) {
+    // Strength below 100 %: the plain, smooth resize is mixed back in (less of the network's own
+    // sharpening and texture). Colour only, like the network: alpha is handled below.
+    const pc = new OffscreenCanvas(W, H), pd = new ImageData(new Uint8ClampedArray(src), W, H);
+    for (let i = 3; i < pd.data.length; i += 4) pd.data[i] = 255;
+    pc.getContext("2d").putImageData(pd, 0, 0);
+    og.globalAlpha = 1 - Math.max(0, strength);
+    og.imageSmoothingQuality = "high";
+    og.drawImage(pc, 0, 0, OW, OH);
+    og.globalAlpha = 1;
+  }
   let result = oc;
   if (hasAlpha) {
     // the colour is the network's; the alpha is the original resized smoothly, applied with destination-in

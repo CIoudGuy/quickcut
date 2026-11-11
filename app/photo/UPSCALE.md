@@ -10,11 +10,12 @@ The page side (button, picker, progress card, how the result enters the document
 
 Status: wired **locally**, nothing uploaded or published (2026-11-09).
 
-## The two models
+## The models
 
 | | Model | Licence (code and weights) | Download | Needs |
 |---|---|---|---|---|
 | **Fast** | 4xLSDIRCompactC3, Philip Hofmann (SRVGGNetCompact, 0.6 M parameters) | CC BY 4.0 (weights), BSD-3-Clause (network, Real-ESRGAN) | 2.5 MB | anything: WebGPU, else CPU (WASM) |
+| **Natural** | 4xBHI_dat2_real, Philip Hofmann (DAT-2, 11 M parameters) | CC BY 4.0 (weights), Apache-2.0 (network, DAT) | 54 MB (float16) | WebGPU with 16-bit floats, ≥ 8 GB RAM |
 | **Max** | SwinIR-L real-world ×4 GAN (28 M parameters, `003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN`) | Apache-2.0 (code and weights, official release) | 64 MB (float16) | WebGPU with 16-bit floats, ≥ 8 GB RAM |
 
 Both are ×4 networks. ×2 is the same network with its output averaged 2×2 (cost per input pixel is the
@@ -28,6 +29,42 @@ choice and the scale are remembered (`quickcut.photo.upq`, `quickcut.photo.ups`)
 CPU) is the background remover's switch (`quickcut.photo.bgep`). If Max fails on the GPU, Fast runs on
 the GPU, then on the CPU: there is always a result. A ×4 that doesn't fit the canvas limit
 (16384 px side, 80 MP) becomes ×2 if that fits.
+
+## Natural and Strength (added 2026-11-11)
+
+Max and Fast are trained to look sharp, and on faces, skin and fur that reads as an "AI look": smooth,
+waxy surfaces and texture the picture never had. Two additions for a result that stays closer to the
+picture:
+
+- **Natural** (a third quality): 4xBHI_dat2_real. Of the models tried it keeps the most of the
+  picture's own grain and texture while still sharpening, and it handles JPEG input.
+- **Strength** (10–100 %, any quality): below 100 % the plain, smooth resize is mixed back in
+  (in the worker, colour only), which tones down whatever the network added.
+
+Measured in the browser (WebGPU, the real worker): four 1200×800 photos (a portrait, a dog, a castle, a
+lion) and a crop of a game thumbnail, shrunk ×4 and upscaled ×4; PSNR against the original (higher =
+closer to it). "JPEG" = the small picture saved as JPEG quality 60 first.
+
+| | portrait | dog | castle | lion | thumbnail | portrait JPEG | castle JPEG |
+|---|---|---|---|---|---|---|---|
+| plain resize | 40.06 | 29.40 | 26.41 | 29.77 | 25.51 | 36.34 | 25.49 |
+| Fast | 37.87 | 28.74 | 25.23 | 28.47 | 29.55 | 35.84 | 24.63 |
+| Max (SwinIR-L GAN) | 36.53 | 25.14 | 24.78 | 28.24 | 27.99 | 34.75 | 24.14 |
+| **Natural (BHI dat2)** | 38.68 | 27.18 | 25.88 | 28.72 | **31.58** | 35.38 | 24.42 |
+| SwinIR-L real-world PSNR weights | 38.55 | 28.73 | 26.54 | 30.26 | 30.06 | 36.34 | 25.79 |
+| SwinIR-M classical ×4 (DF2K) | **41.24** | **30.84** | **26.65** | 30.09 | 30.57 | 35.86 | 25.21 |
+
+By eye:
+- **Natural**: closer to the original than Max on all seven; skin keeps its grain, the castle's windows
+  and the lion's fur are crisp without Max's smoothing. On the dog's short fur it draws a faint woven
+  pattern (Strength 70 % softens it).
+- **SwinIR-L PSNR weights** (same network as Max, the release's non-GAN file): good numbers, but the
+  result looks painted: flat, smeared areas with sharp outlines. Not added.
+- **SwinIR-M classical** (trained on clean bicubic pairs only): the closest on clean photos, but it
+  amplifies JPEG blocks into a grid and doubles hard edges on drawn art, so it is unsafe as a general
+  choice. It also overflows in float16 (black output) and needs the 60 MB float32 file. Not added.
+
+Speed on the same GPU: Natural 4.9 s and Max 4.5 s for 680×384 → 2720×1536.
 
 ## What was measured
 
