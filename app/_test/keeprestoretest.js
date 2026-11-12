@@ -38,6 +38,20 @@ export async function run() {
 
   ok("before: band shows the cleaned colour", near(px(L.bgFixed, 100, 50), CLEAN), px(L.bgFixed, 100, 50).join());
   await mode("keep");
+  {
+    // while the stroke is still held, the live preview already shows the photo's colour (read from the screen)
+    const screenAt = (x, y) => {
+      q.renderNow();
+      const rr = cv.getBoundingClientRect(), sc = cv.width / rr.width;
+      return [...cv.getContext("2d").getImageData(Math.round((q.view.ox + (x + 0.5) * q.view.z) * sc), Math.round((q.view.oy + (y + 0.5) * q.view.z) * sc), 1, 1).data.slice(0, 3)];
+    };
+    pe("pointerdown", 60, 20); for (let x = 60; x <= 150; x += 2) pe("pointermove", x, 20);
+    await wait(250);
+    ok("keep, still held: the preview shows the photo's colour", near(screenAt(100, 20), PHOTO, 8), screenAt(100, 20).join());
+    pe("pointerup", 150, 20); await wait(250);
+    ok("keep, released: the same colour stays", near(screenAt(100, 20), PHOTO, 8), screenAt(100, 20).join());
+    q.undo(); await wait(200);
+  }
   await strokeRow(50, 60, 150);
   ok("keep: mask restored under the stroke", baseAt(100, 50) >= 250, baseAt(100, 50));
   ok("keep: restored band shows the photo's colour", near(px(L.bgFixed, 100, 50), PHOTO), px(L.bgFixed, 100, 50).join());

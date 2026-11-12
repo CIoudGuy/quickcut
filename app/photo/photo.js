@@ -575,10 +575,32 @@ export function mount(root) {
     return {
       ...((!exact && levelFor(px, zk)) || { src: px }),
       id: l.id, parent: l.parent ?? null, m, x: l.x, y: l.y, opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip,
-      stroke: withStroke && stroke?.scr && stroke.layer === l && !stroke.onMask ? { src: stroke.scr, alpha: stroke.alpha, erase: stroke.erase, screen: true } : null,
+      stroke: withStroke && stroke?.scr && stroke.layer === l ? (stroke.onMask ? keepPhoto(l) : { src: stroke.scr, alpha: stroke.alpha, erase: stroke.erase, screen: true }) : null,
       mask: l.mask && l.maskOn ? maskDraw(l, withStroke, exact, zk) : null,
     };
   });
+  /** While Keep is being painted on a background-removed layer: the photo inside the stroke so far, in
+   *  screen pixels. Drawn onto the layer under the mask, it gives the live preview the colours the
+   *  layer gets on release (maskStroke); without it the preview showed the cleaned edge colours. */
+  function keepPhoto(l) {
+    const s = stroke;
+    if (s.erase || !l.preBg || !l.bgFixed || l.canvas !== l.bgFixed) return null;
+    const W = s.scr.width, H = s.scr.height, L = mul(docM(), lm(l)), zk = scaleOf(L);
+    if (!s.photo || s.photo.width !== W || s.photo.height !== H) s.photo = blank(W, H);
+    const g = s.photo.getContext("2d"), lv = levelFor(l.preBg, zk);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = zk < 2;
+    g.setTransform(L[0], L[1], L[2], L[3], L[4], L[5]);
+    if (lv) g.scale(lv.sx, lv.sy);
+    g.drawImage(lv ? lv.src : l.preBg, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "destination-in";
+    g.drawImage(s.scr, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    return { src: s.photo, alpha: s.alpha, erase: false, screen: true };
+  }
   function maskDraw(l, withStroke = true, exact = false, zk = view.z * k * scaleOf(lm(l))) {
     const m = l.mask;
     return {
@@ -781,6 +803,15 @@ export function mount(root) {
     }
     if (hover && isPaint() && !pinch && !gesture?.pan && !space) {
       const r = Math.max(1, (optsOf(tool).size / 2) * view.z * k);
+      if (shiftHeld && !stroke && lastPaint && lastPaint.layer === selLayer()) {
+        // Shift + click paints a straight line from the last point: show where it will go
+        const [ax, ay] = ap(mul(docM(), lm(lastPaint.layer)), lastPaint.x, lastPaint.y), bx = hover.x * k, by = hover.y * k;
+        ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+        ctx.lineWidth = 3 * k; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.stroke();
+        ctx.lineWidth = k; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
+        ctx.beginPath(); ctx.arc(ax, ay, 3 * k, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.stroke();
+      }
       ctx.lineWidth = k;
       ctx.beginPath(); ctx.arc(hover.x * k, hover.y * k, r + k, 0, Math.PI * 2); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.stroke();
       ctx.beginPath(); ctx.arc(hover.x * k, hover.y * k, r, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
@@ -1973,6 +2004,13 @@ export function mount(root) {
     s.last = [x, y, pr];
   }
   let lastPaint = null;
+  // Shift held while a paint tool is active: the guide line to the last painted point (drawn in frame())
+  let shiftHeld = false;
+  {
+    const onShift = (e) => { const on = !!e.shiftKey; if (on !== shiftHeld) { shiftHeld = on; if (doc && isPaint()) invalidate(); } };
+    addEventListener("keydown", onShift); addEventListener("keyup", onShift); addEventListener("pointermove", onShift);
+    addEventListener("blur", () => { if (shiftHeld) { shiftHeld = false; invalidate(); } });
+  }
   function commitStroke() {
     const s = stroke;
     if (!s) return;
