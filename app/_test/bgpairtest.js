@@ -65,6 +65,14 @@ export async function run() {
   // paint on the layer
   const L = top();
   v.querySelector('[data-tool="brush"]').click(); await wait(200);
+  // a known brush: settings persist, and another test or session may have left a tiny or faint one
+  {
+    const f = (p) => v.querySelector(`input[data-p="${p}"]`), fire = (el, val) => { if (el) { el.value = val; el.dispatchEvent(new Event("input", { bubbles: true })); } };
+    const sz = f("size");
+    for (let i = +sz.min; i <= +sz.max; i++) { fire(sz, i); if (parseInt(v.querySelector('[data-v="size"]').textContent) >= 40) break; }
+    fire(f("hard"), 80); fire(f("bop"), 100); fire(f("color"), "#ffffff");
+    await wait(100);
+  }
   const r = cv.getBoundingClientRect(), at = (x, y) => ({ clientX: r.left + q.view.ox + x * q.view.z, clientY: r.top + q.view.oy + y * q.view.z });
   const pe = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: "mouse", button: 0, buttons: type === "pointerup" ? 0 : 1, bubbles: true, ...at(x, y) }));
   pe("pointerdown", 60, 80); for (let x = 60; x <= 150; x += 2) pe("pointermove", x, 80); pe("pointerup", 150, 80);

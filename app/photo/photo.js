@@ -990,7 +990,17 @@ export function mount(root) {
   cv.addEventListener("pointerup", up);
   cv.addEventListener("pointercancel", up);
   cv.addEventListener("pointerleave", () => { if (!gesture) { hover = null; invalidate(); } });
-  cv.addEventListener("contextmenu", (e) => { e.preventDefault(); if (doc && !crop && !e.altKey && !gesture) layerMenu(e); });
+  // The "layers here" menu is for a deliberate right-click with the Move tool. Not while painting,
+  // selecting or typing, not for a pen's side button or a long press (those also send "contextmenu"),
+  // not with another button down or right after a drag or stroke ended (a slip of the hand).
+  let lastCanvasUp = 0;
+  cv.addEventListener("pointerup", () => { lastCanvasUp = performance.now(); });
+  cv.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (!doc || crop || e.altKey || gesture || stroke || tool !== "move") return;
+    if (e.button !== 2 || (e.pointerType && e.pointerType !== "mouse") || (e.buttons & 1) || performance.now() - lastCanvasUp < 250) return;
+    layerMenu(e);
+  });
   stage.addEventListener("wheel", (e) => {
     if (!doc || e.target !== cv) return;
     e.preventDefault();
@@ -1318,9 +1328,12 @@ export function mount(root) {
     clearTimeout(nudgeT);
     nudgeT = setTimeout(() => { nudgeT = 0; endEdit("Move layer"); changed(); }, 500);
   }
+  let layerMenuLay = null; // one at a time: a second right-click moves the menu instead of stacking another
   function layerMenu(e) {
+    layerMenuLay?.close();
+    layerMenuLay = null;
     const [x, y] = toDoc(local(e)), list = layersAt(x, y);
-    if (!list.length) return;
+    if (list.length < 2) return; // nothing to choose between
     const el = h(`<div class="ph-menu" role="menu" aria-label="Layers here"></div>`);
     let lay = null;
     for (const l of list) {
@@ -1329,7 +1342,7 @@ export function mount(root) {
       b.onclick = () => { lay.close(); selectLayers([l]); invalidate(); };
       el.append(b);
     }
-    lay = openLayer(el, { width: 200, reopen: false });
+    lay = layerMenuLay = openLayer(el, { width: 200, reopen: false, onClose: () => { if (layerMenuLay === lay) layerMenuLay = null; } });
     if (!isPhone()) {
       const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
       el.style.left = `${Math.min(e.clientX / zoom, innerWidth / zoom - 212)}px`;
