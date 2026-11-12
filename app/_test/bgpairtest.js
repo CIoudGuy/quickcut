@@ -32,6 +32,25 @@ export async function run() {
   const maskOff = async (l, x, y) => { l.maskOn = false; const p = px(q.drawnPx(l), x, y); l.maskOn = true; return p; };
   const pair = (l) => !!l.preBg && !!l.bgFixed && l.canvas === l.bgFixed;
 
+  // on screen (read back from the editor's own canvas): with the mask hidden the photo shows, and the
+  // cut-out with its cleaned edge comes back when the mask is shown again
+  {
+    const screenAt = (x, y) => {
+      q.renderNow();
+      const r = cv.getBoundingClientRect(), s = cv.width / r.width;
+      return [...cv.getContext("2d").getImageData(Math.round((q.view.ox + (x + 0.5) * q.view.z) * s), Math.round((q.view.oy + (y + 0.5) * q.view.z) * s), 1, 1).data.slice(0, 3)];
+    };
+    v.querySelector('[data-tool="mask"]').click(); await wait(200);
+    const sw = () => v.querySelector('[data-p="maskon"]');
+    sw().click(); await wait(250);
+    ok("screen: mask off", !top().maskOn);
+    ok("screen: mask off shows the photo in the cleaned band", near(screenAt(100, 50), PHOTO, 6), screenAt(100, 50).join());
+    ok("screen: mask off shows the photo where it was removed", near(screenAt(160, 50), PHOTO, 6), screenAt(160, 50).join());
+    sw().click(); await wait(250);
+    ok("screen: mask on again", top().maskOn && near(screenAt(40, 50), PHOTO, 6), screenAt(40, 50).join());
+    v.querySelector('[data-tool="move"]').click(); await wait(150);
+  }
+
   // duplicate
   const L0 = top();
   q.ops.dup(); await wait(300);

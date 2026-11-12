@@ -60,7 +60,7 @@ export async function run() {
     ok("Size dialog: Resize, Canvas, Upscale", !!dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|") === "Resize|Canvas|Upscale", dlg && [...dlg.querySelectorAll("[data-m]")].map((x) => x.textContent).join("|"));
     ok("Size dialog opens on Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
     dlg?.querySelector('[data-m="up"]').click(); await wait(1500);
-    ok("Upscale: its options replace the resize fields", !!dlg && dlg.querySelector(".ph-rs").hidden && !dlg.querySelector(".ph-up").hidden && [...dlg.querySelectorAll(".ph-up [data-uq]")].map((x) => x.dataset.uq).join() === "fast,natural,max" && dlg.querySelectorAll(".ph-up [data-us]").length === 2);
+    ok("Upscale: its options replace the resize fields", !!dlg && dlg.querySelector(".ph-rs").hidden && !dlg.querySelector(".ph-up").hidden && [...dlg.querySelectorAll(".ph-up [data-uq]")].map((x) => x.dataset.uq).join() === "fast,max" && dlg.querySelectorAll(".ph-up [data-us]").length === 2);
     ok("Upscale: one button to start", /upscale/i.test(dlg?.querySelector('.ph-up [data-b="go"]')?.textContent || ""), dlg?.querySelector('.ph-up [data-b="go"]')?.textContent);
     dlg?.querySelector('[data-m="image"]').click(); await wait(100);
     ok("back to Resize", !!dlg && !dlg.querySelector(".ph-rs").hidden && dlg.querySelector(".ph-up").hidden);
@@ -239,26 +239,6 @@ export async function run() {
     out.maxMs = q.up.stats?.ms;
     await undo();
     ok("Max undo", doc().w === 120);
-  }
-  // ── Natural (the same needs as Max): runs as itself, and stays closer to the picture than Max
-  const natOk = info?.models?.natural && !info.models.natural.unfit;
-  out.naturalAvailable = !!natOk;
-  if (natOk && maxOk) {
-    const err = (c, ref) => { const a = c.getContext("2d").getImageData(0, 0, c.width, c.height).data, b = ref.getContext("2d").getImageData(0, 0, c.width, c.height).data; let t = 0; for (let i = 0; i < a.length; i += 4) for (let k = 0; k < 3; k++) t += (a[i + k] - b[i + k]) ** 2; return t / (a.length * 0.75); };
-    // a detailed picture, shrunk ×4: the upscaled result is compared with the original
-    const big = new OffscreenCanvas(480, 360), bg = big.getContext("2d");
-    art(bg, 480, 360);
-    for (let i = 0; i < 400; i++) { bg.fillStyle = `hsl(${(i * 47) % 360} 55% ${30 + (i * 13) % 45}%)`; bg.fillRect((i * 73) % 470, (i * 131) % 350, 3 + (i % 9), 2 + (i % 7)); }
-    await fresh(120, 90, (g) => { g.imageSmoothingQuality = "high"; g.drawImage(big, 0, 0, 120, 90); }, "natural.png");
-    ok("Natural ×4 finishes", await upscale("natural", 4, 600000));
-    ok("Natural ran as Natural (not the fallback)", q.up.stats?.quality === "natural" && q.up.stats?.ep === "webgpu", JSON.stringify(q.up.stats));
-    const eNat = err(layer().canvas, big);
-    await undo();
-    ok("Max ×4 on the same picture", await upscale("max", 4, 600000));
-    const eMax = err(layer().canvas, big);
-    await undo();
-    out.naturalVsMax = `${eNat.toFixed(1)} vs ${eMax.toFixed(1)}`;
-    ok("Natural is closer to the original than Max", eNat < eMax, out.naturalVsMax);
   }
   return { pass: !fails.length, fails, out };
 }

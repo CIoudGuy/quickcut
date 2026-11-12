@@ -4,8 +4,7 @@
 import { icon, h, esc, toast, syncSlider } from "../shared/ui.js";
 
 const IC = "M2.5 7.5h6v6h-6zM7 9l6.5-6.5M9.5 2.5h4v4"; // a small square growing into a big one
-// Fast: small, any device. Natural: stays closest to the picture. Max: the sharpest, adds the most texture of its own.
-const QUALITIES = [["fast", "Fast"], ["natural", "Natural"], ["max", "Max"]];
+const QUALITIES = [["fast", "Fast"], ["max", "Max"]];
 const SCALES = [2, 4];
 const fmtMB = (b) => `${Math.round(b / 1e6)} MB`;
 const store = {

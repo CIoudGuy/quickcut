@@ -568,10 +568,12 @@ export function mount(root) {
     pp.v = cver.get(c) || 0;
   }
   // a smart layer seen small is drawn from the mip level for its own scale × the zoom
+  // (shownPx: with its mask hidden, a background-removed layer shows the photo, not the copy with cleaned
+  // edge colours; the screen, the export and Copy all go through it)
   const drawList = (withStroke = true, exact = false) => doc.layers.map((l) => {
-    const m = lm(l), zk = view.z * k * scaleOf(m);
+    const m = lm(l), zk = view.z * k * scaleOf(m), px = shownPx(l);
     return {
-      ...((!exact && levelFor(l.canvas, zk)) || { src: l.canvas }),
+      ...((!exact && levelFor(px, zk)) || { src: px }),
       id: l.id, parent: l.parent ?? null, m, x: l.x, y: l.y, opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip,
       stroke: withStroke && stroke?.scr && stroke.layer === l && !stroke.onMask ? { src: stroke.scr, alpha: stroke.alpha, erase: stroke.erase, screen: true } : null,
       mask: l.mask && l.maskOn ? maskDraw(l, withStroke, exact, zk) : null,
@@ -4005,7 +4007,7 @@ export function mount(root) {
     if (w.docVer === doc.ver) return;
     const ver = doc.ver;
     const layers = await Promise.all(doc.layers.map(async (l) => ({
-      id: l.id, parent: l.parent ?? null, src: l.visible ? await createImageBitmap(l.canvas) : null, x: l.x, y: l.y, m: lm(l), opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip,
+      id: l.id, parent: l.parent ?? null, src: l.visible ? await createImageBitmap(shownPx(l)) : null, x: l.x, y: l.y, m: lm(l), opacity: l.opacity, blend: l.blend, visible: l.visible, clip: l.clip,
       mask: l.visible && l.mask && l.maskOn ? { src: await createImageBitmap(l.mask) } : null,
     })));
     const groups = doc.groups.map((g) => ({ ...g }));
@@ -4968,7 +4970,7 @@ export function mount(root) {
     } else {
       const l = selLayer();
       if (!l) return null;
-      if (plain(l)) { src = l.mask && l.maskOn ? maskedCopy(l) : l.canvas; ox = l.x; oy = l.y; }
+      if (plain(l)) { src = l.mask && l.maskOn ? maskedCopy(l) : shownPx(l); ox = l.x; oy = l.y; }
       else { const bx = pxBox(aabb(l)); src = flatCanvas([asDraw(l, { parent: null, opacity: 1, blend: "normal", visible: true, clip: false })], [], bx); ox = bx.x; oy = bx.y; }
     }
     let x0 = ox, y0 = oy, w = src.width, hh = src.height;

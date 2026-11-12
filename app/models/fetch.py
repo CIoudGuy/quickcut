@@ -20,8 +20,7 @@ Upstream (all permissively licensed):
   than High detail, see ../photo/BG_REMOVER.md.)
   * ONNX Runtime Web 1.31.1 WebAssembly binary (MIT, github.com/microsoft/onnxruntime).
   * The upscalers (photo/UPSCALE.md): Fast = 4xLSDIRCompactC3 (Philip Hofmann, CC BY 4.0, architecture
-    SRVGGNetCompact from Real-ESRGAN, BSD-3-Clause), Natural = 4xBHI_dat2_real (Philip Hofmann, CC BY 4.0,
-    architecture DAT-2, Apache-2.0), Max = SwinIR-L real-world x4 GAN (Apache-2.0 code
+    SRVGGNetCompact from Real-ESRGAN, BSD-3-Clause), Max = SwinIR-L real-world x4 GAN (Apache-2.0 code
     and weights, github.com/JingyunLiang/SwinIR). PyTorch weights -> ONNX in export_upscale.py (needs
     `pip install torch spandrel onnx onnxruntime onnxconverter-common`).
 
@@ -98,13 +97,6 @@ SOURCES = {
         "export": {"tile": 128, "fp16": True},
         "prepared_sha256": "15c419eb5c5124280f97b11ee1f7c2de0cdd024a4f5af042dadb5cf1ab924f42",
     },
-    "upscale-natural": {
-        "url": "https://github.com/Phhofm/models/releases/download/4xBHI_dat2_real/4xBHI_dat2_real.safetensors",
-        "sha256": "1f651fe8e2b7ad978eee0db9c8de89b7bbfd9d2d671ffababb9baf6e2d5b38f6",
-        "out": "upscale-natural/model_f16.onnx",
-        "export": {"tile": 128, "fp16": True},
-        "prepared_sha256": "4981bbf251fb269f132c18dbbf77e46926eb6577acec11f216f8371e120dd187",  # torch 2.x (CPU), onnx, onnxruntime: Python 3.12
-    },
 }
 MODELS = {
     "birefnet-512": {"file": "birefnet-512", "name": "BiRefNet 512 (4-bit)", "license": "MIT", "input": 512},
@@ -118,7 +110,6 @@ UPSCALE = {
     # "gpu": needs WebGPU with 16-bit floats; the worker (upscale.js) reads tile / overlap / scale
     "models": {
         "fast": {"file": "upscale-fast", "name": "4xLSDIRCompactC3", "license": "CC BY 4.0", "scale": 4, "tile": 128, "overlap": 16},
-        "natural": {"file": "upscale-natural", "name": "4xBHI_dat2_real (DAT-2)", "license": "CC BY 4.0", "scale": 4, "tile": 128, "overlap": 16, "gpu": True},
         "max": {"file": "upscale-max", "name": "SwinIR-L real-world x4 (GAN)", "license": "Apache-2.0", "scale": 4, "tile": 128, "overlap": 16, "gpu": True},
     },
 }

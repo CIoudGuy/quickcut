@@ -46,10 +46,6 @@ Photo upscaler models (models/upscale-*, converted to ONNX; see photo/UPSCALE.md
   (https://github.com/JingyunLiang/SwinIR). Licensed under the Apache License, Version 2.0; you may
   obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an
   "AS IS" basis, without warranties or conditions of any kind.
-- "Natural": 4xBHI_dat2_real by Philip Hofmann (https://github.com/Phhofm/models), licensed under
-  Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/); converted to ONNX
-  (float16), otherwise unchanged. Its network (DAT-2) is from DAT
-  (https://github.com/zhengchen1999/DAT, Apache License 2.0).
 - "Fast": 4xLSDIRCompactC3 by Philip Hofmann (https://github.com/Phhofm/models), licensed under
   Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/); converted to ONNX
   (float32), otherwise unchanged. Its network (SRVGGNetCompact) is from Real-ESRGAN
