@@ -16,7 +16,6 @@ checks their SHA-256, prepares the models and writes them here in parts of at mo
 | File | Size | Used for | Licence | Source |
 |---|---|---|---|---|
 | `upscale-fast/model.onnx.*` | 2.5 MB | Upscale, Fast (any device) | CC BY 4.0 | 4xLSDIRCompactC3 by Philip Hofmann ([Phhofm/models](https://github.com/Phhofm/models/releases/tag/4xLSDIRCompact3)), network SRVGGNetCompact ([Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN), BSD-3-Clause), float32, 128×128 tiles |
-| `upscale-natural/model_f16.onnx.*` | 54 MB | Upscale, Natural (optional download, needs WebGPU with 16-bit floats) | CC BY 4.0 | 4xBHI_dat2_real by Philip Hofmann ([Phhofm/models](https://github.com/Phhofm/models/releases/tag/4xBHI_dat2_real)), DAT-2 network ([zhengchen1999/DAT](https://github.com/zhengchen1999/DAT), Apache-2.0) |
 | `upscale-max/model_f16.onnx.*` | 64 MB | Upscale, Max (optional download, needs WebGPU with 16-bit floats) | Apache-2.0 | SwinIR-L real-world ×4 GAN ([JingyunLiang/SwinIR](https://github.com/JingyunLiang/SwinIR), release `v0.0`), float16 inside, 128×128 tiles |
 
 The upscalers are exported from their PyTorch weights by `export_upscale.py` (needs `torch spandrel onnx
